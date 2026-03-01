@@ -1,6 +1,5 @@
-const SB_URL = 'https://izdwvipihjtpjxoefyuq.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6ZHd2aXBpaGp0cGp4b2VmeXVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzNjQ0OTgsImV4cCI6MjA4Nzk0MDQ5OH0.HrlWvT0q0mE92eoGkMgofFxU7WNDdD2krqO5638nQkU';
-const supabase = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+const PUSHER_KEY = '9916c0c7cc39de16616c';
+const PUSHER_CLUSTER = 'ap2';
 
 class TraceApp {
     constructor() {
@@ -44,57 +43,30 @@ class TraceApp {
     }
 
     setupRealtime() {
-        if (!supabase) return;
+        if (typeof Pusher === 'undefined') return;
+        this.pusher = new Pusher(PUSHER_KEY, { cluster: PUSHER_CLUSTER });
+        this.channel = this.pusher.subscribe('trace-world');
         this.remoteCursors = new Map();
         this.presenceContainer = document.getElementById('remote-cursors-layer');
 
-        this.channel = supabase.channel('world_presence', {
-            config: { presence: { key: this.user ? this.user.id : 'anon' } }
+        this.channel.bind('cursor-move', (data) => {
+            this.updateRemoteCursor(data);
         });
 
-        this.channel
-            .on('presence', { event: 'sync' }, () => {
-                const state = this.channel.presenceState();
-                console.log('Syncing presence', state);
-            })
-            .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-                console.log('Join', key, newPresences);
-            })
-            .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-                const cursor = this.remoteCursors.get(key);
-                if (cursor) {
-                    cursor.remove();
-                    this.remoteCursors.delete(key);
-                }
-            })
-            .on('broadcast', { event: 'cursor' }, ({ payload }) => {
-                this.updateRemoteCursor(payload);
-            })
-            .on('broadcast', { event: 'stroke' }, ({ payload }) => {
-                // Real-time stroke visibility before official KV save
-                if (!this.traces.some(t => t.id === payload.id)) {
-                    this.traces.push(payload);
-                    this.render();
-                    this.updateStats();
-                }
-            })
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    console.log('Realtime SUBSCRIBED');
-                    this.trackPresence();
-                }
-            });
+        this.channel.bind('new-stroke', (data) => {
+            if (!this.traces.some(t => t.id === data.id)) {
+                this.traces.push(data);
+                this.render();
+                this.updateStats();
+            }
+        });
     }
 
     async trackPresence() {
-        if (!this.channel || !this.user) return;
-        console.log('Tracking presence for:', this.user.nickname);
-        await this.channel.track({
-            id: this.user.id,
-            nickname: this.user.nickname,
-            avatar: this.user.avatar,
-            online_at: new Date().toISOString(),
-        });
+        // Pusher client events or simply notifying others
+        if (this.user) {
+            console.log('Realtime connected via Pusher');
+        }
     }
 
     updateRemoteCursor(data) {
@@ -400,19 +372,26 @@ class TraceApp {
     handleMouseMove(e) {
         const pos = this.getCoord(e);
 
-        // Broadcast local cursor to others
-        if (this.channel && this.user) {
-            this.channel.send({
-                type: 'broadcast',
-                event: 'cursor',
-                payload: {
-                    id: this.user.id,
-                    nickname: this.user.nickname,
-                    avatar: this.user.avatar,
-                    color: this.currentColor,
-                    pos: pos
-                }
-            });
+        // Broadcast local cursor to others (via relay to avoid Pusher Auth overhead)
+        if (this.user) {
+            const now = Date.now();
+            if (!this.lastBroadcast || now - this.lastBroadcast > 50) { // Throttle cursor
+                this.lastBroadcast = now;
+                fetch('/api/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        event: 'cursor-move',
+                        payload: {
+                            id: this.user.id,
+                            nickname: this.user.nickname,
+                            avatar: this.user.avatar,
+                            color: this.currentColor,
+                            pos: pos
+                        }
+                    })
+                }).catch(() => { });
+            }
         }
 
         if (this.isDrawing) {
@@ -433,14 +412,16 @@ class TraceApp {
         if (!this.isDrawing) return;
         this.isDrawing = false;
         if (this.currentStroke) {
-            // Instant broadcast for others already in the world
-            if (this.channel) {
-                this.channel.send({
-                    type: 'broadcast',
-                    event: 'stroke',
+            // Instant broadcast via relay for live synchronization
+            fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event: 'new-stroke',
                     payload: this.currentStroke
-                });
-            }
+                })
+            }).catch(() => { });
+
             // Global persistence store (Cloudflare API)
             fetch('/api/traces', {
                 method: 'POST',
