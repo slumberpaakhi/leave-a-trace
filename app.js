@@ -36,6 +36,10 @@ class TraceApp {
         this.adminPass = '';
         this.analytics = { visits: 0, clears: 0 };
 
+        this.isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        this.panOffset = { x: 0, y: 0 };
+        this.isPanning = false;
+
         this.init();
         this.loadWorld();
         this.setCursor(this.currentColor);
@@ -97,7 +101,7 @@ class TraceApp {
             this.presenceContainer.appendChild(cursor);
             this.remoteCursors.set(data.id, cursor);
         }
-        cursor.style.transform = `translate(${data.pos.x}px, ${data.pos.y}px)`;
+        cursor.style.transform = `translate(${data.pos.x - this.panOffset.x}px, ${data.pos.y - this.panOffset.y}px)`;
     }
 
     init() {
@@ -170,7 +174,19 @@ class TraceApp {
 
         // Toolbar Tool Listeners
         const undoBtn = document.getElementById('undo-btn');
-        if (undoBtn) undoBtn.onclick = () => this.undo();
+        const centerBtn = document.getElementById('center-btn');
+        if (centerBtn) {
+            centerBtn.onclick = () => {
+                if (this.isLocalHost) {
+                    this.panOffset = { x: 0, y: 0 };
+                    this.render();
+                } else {
+                    // Center a 3000x3000px canvas in the viewport
+                    this.viewport.scrollLeft = (3000 - window.innerWidth) / 2;
+                    this.viewport.scrollTop = (3000 - window.innerHeight) / 2;
+                }
+            };
+        }
 
         const panBtn = document.getElementById('pan-btn');
         if (panBtn) {
@@ -406,18 +422,26 @@ class TraceApp {
     }
 
     resize() {
-        this.canvas.width = 3000;
-        this.canvas.height = 3000;
+        if (this.isLocalHost) {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        } else {
+            this.canvas.width = 3000;
+            this.canvas.height = 3000;
+        }
         this.render();
     }
 
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
         const scale = window.innerWidth < 768 ? 0.5 : 1.0;
-        return {
-            x: (e.clientX - rect.left) / scale,
-            y: (e.clientY - rect.top) / scale
-        };
+        const x = (e.clientX - rect.left) / scale;
+        const y = (e.clientY - rect.top) / scale;
+
+        if (this.isLocalHost) {
+            return { x: x + this.panOffset.x, y: y + this.panOffset.y };
+        }
+        return { x, y };
     }
 
     startDrawing(e) {
@@ -449,7 +473,15 @@ class TraceApp {
     }
 
     handleMouseMove(e) {
-        if (this.isPanning) {
+        if (this.isPanning && this.isLocalHost) {
+            const dx = (e.clientX - this.lastPan.x);
+            const dy = (e.clientY - this.lastPan.y);
+            this.panOffset.x -= dx;
+            this.panOffset.y -= dy;
+            this.lastPan = { x: e.clientX, y: e.clientY };
+            this.render();
+            return;
+        } else if (this.isPanning) {
             const dx = e.clientX - this.lastPan.x;
             const dy = e.clientY - this.lastPan.y;
             this.viewport.scrollLeft -= dx;
@@ -533,12 +565,22 @@ class TraceApp {
         const now = Date.now();
         this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
 
+        if (this.isLocalHost) {
+            this.ctx.save();
+            this.ctx.translate(-this.panOffset.x, -this.panOffset.y);
+        }
+
         this.traces.forEach(stroke => {
             const elapsed = now - stroke.timestamp;
             const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
             this.ctx.globalAlpha = fadeAlpha;
             this.drawFullStroke(stroke);
         });
+
+        if (this.isLocalHost) {
+            this.ctx.restore();
+        }
+
         this.ctx.globalAlpha = 1.0;
     }
 
@@ -587,6 +629,9 @@ class TraceApp {
 
         if (found) {
             tooltip.classList.remove('hidden');
+            const screenX = this.isLocalHost ? (found.points[0].x - this.panOffset.x) : e.clientX;
+            const screenY = this.isLocalHost ? (found.points[0].y - this.panOffset.y) : e.clientY;
+
             tooltip.style.left = (e.clientX + 15) + 'px';
             tooltip.style.top = (e.clientY + 15) + 'px';
             document.getElementById('tooltip-nickname').innerText = found.nickname;
