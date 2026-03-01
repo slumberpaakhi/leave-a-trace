@@ -105,15 +105,17 @@ class TraceApp {
 
         // Admin Auth Flow
         if (this.isAdmin) {
-            this.adminPass = prompt('enter administrator password:');
-            if (this.adminPass === '1234') {
-                this.isAuthenticated = true;
-                document.body.classList.add('is-admin');
-                this.showAdminPanel();
-            } else {
-                alert('access denied.');
-                window.location.href = window.location.pathname;
-            }
+            setTimeout(() => {
+                this.adminPass = prompt('enter administrator password:');
+                if (this.adminPass === '1234') {
+                    this.isAuthenticated = true;
+                    document.body.classList.add('is-admin');
+                    this.showAdminPanel();
+                } else {
+                    alert('access denied.');
+                    window.location.href = window.location.pathname;
+                }
+            }, 100);
         }
 
         document.getElementById('save-identity').addEventListener('click', () => this.saveIdentity());
@@ -290,26 +292,30 @@ class TraceApp {
 
     loadIdentity() {
         try {
-            // Prioritize localStorage v2 for fresh start and consistency
-            const saved = localStorage.getItem('trace_user_v2');
-            if (saved) {
-                console.log('Loaded identity from localStorage (v2)');
-                return JSON.parse(saved);
+            const KEY = 'trace_user_v2';
+            // 1. Try LocalStorage
+            let saved = localStorage.getItem(KEY);
+            if (saved && saved !== "undefined" && saved !== "null") {
+                const user = JSON.parse(saved);
+                if (user && user.id) {
+                    console.info('Identity: Loaded from LocalStorage');
+                    return user;
+                }
             }
 
-            // Fallback to cookie if v2 not found (e.g., old user)
+            // 2. Try Cookie fallback
             const cookieUser = this.getCookie('trace_user_cookie');
             if (cookieUser && cookieUser.id) {
-                console.log('Loaded identity from cookie');
-                // Migrate cookie user to localStorage v2 for future consistency
-                localStorage.setItem('trace_user_v2', JSON.stringify(cookieUser));
+                console.info('Identity: Loaded from Cookie');
+                localStorage.setItem(KEY, JSON.stringify(cookieUser));
                 return cookieUser;
             }
 
-            console.log('No identity found, starting fresh.');
+            console.info('Identity: No persistent user found.');
             return null;
         } catch (e) {
-            console.error('Error loading identity:', e);
+            console.warn('Identity: Corruption detected, resetting.', e);
+            localStorage.removeItem('trace_user_v2');
             return null;
         }
     }
@@ -598,8 +604,12 @@ class TraceApp {
     }
 
     updateStats() {
-        const count = document.getElementById('trace-count');
-        if (count) count.innerText = this.traces.length;
+        if (this.isAuthenticated) {
+            this.showAdminPanel(); // Refresh full dashboard
+        } else {
+            const count = document.getElementById('trace-count');
+            if (count) count.innerText = this.traces.length;
+        }
     }
 
     loadTraces() { return null; } // Logic moved to loadWorld
