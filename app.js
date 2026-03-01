@@ -80,6 +80,12 @@ class TraceApp {
             this.updateSetupPreview(e.target.value);
         });
 
+        // Hiding instruments for admin
+        if (this.isAdmin) {
+            const overlay = document.getElementById('interface-overlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
         // Input listeners
         this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
@@ -234,7 +240,7 @@ class TraceApp {
     }
 
     startDrawing(e) {
-        if (!this.user) return;
+        if (!this.user || this.isAuthenticated) return; // Disallow drawing for admins
         this.isDrawing = true;
         this.currentStroke = {
             id: Math.random().toString(36).substr(2, 9),
@@ -371,8 +377,33 @@ class TraceApp {
 
     showAdminPanel() {
         const statsEl = document.querySelector('.stats');
+        const footer = document.querySelector('footer');
+        if (footer) footer.classList.add('admin-view');
+
+        // Extract unique contributors
+        const contributors = [...new Set(this.traces.map(t => t.nickname))];
+        const latestContributor = contributors.length > 0 ? contributors[contributors.length - 1] : 'none';
+
         if (statsEl) {
-            statsEl.innerHTML = `admin: ${this.analytics.visits} visits | ${this.analytics.clears} clears | <span id="trace-count">${this.traces.length}</span> live traces`;
+            statsEl.innerHTML = `
+                <div class="admin-dashboard">
+                    <div class="stat-group">
+                        <span class="stat-label">total visits:</span> ${this.analytics.visits}
+                    </div>
+                    <div class="stat-group">
+                        <span class="stat-label">total clears:</span> ${this.analytics.clears}
+                    </div>
+                    <div class="stat-group">
+                        <span class="stat-label">active traces:</span> ${this.traces.length}
+                    </div>
+                    <div class="stat-group">
+                        <span class="stat-label">contributors:</span> ${contributors.length}
+                    </div>
+                    <div class="stat-group">
+                        <span class="stat-label">latest:</span> ${latestContributor}
+                    </div>
+                </div>
+            `;
         }
     }
 

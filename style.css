@@ -72,6 +72,48 @@ body.is-admin .reset-link {
     opacity: 0.15;
 }
 
+/* Admin Overrides */
+body.is-admin {
+    cursor: default !important;
+}
+
+body.is-admin main {
+    cursor: default !important;
+}
+
+body.is-admin #interface-overlay {
+    display: none !important;
+}
+
+.admin-dashboard {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1rem;
+    background: var(--picker-bg);
+    border-radius: 1rem;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(128, 128, 128, 0.1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+
+.stat-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.stat-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.2rem;
+}
+
+.admin-view {
+    bottom: 2rem !important;
+}
+
 /* Modal Styling */
 .modal {
     position: fixed;
