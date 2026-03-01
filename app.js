@@ -19,11 +19,12 @@ class TraceApp {
         this.user = this.loadIdentity() || null;
 
         // Data
-        this.traces = this.loadTraces() || [];
+        this.traces = []; // Now synced via Gun
         this.localHistory = []; // For Undo (Ctrl+Z)
 
-        // Real-time synchronization (BroadcastChannel for tab-to-tab)
-        this.syncChannel = new BroadcastChannel('trace_global_sync');
+        // Real-time synchronization (Gun.js for global sync)
+        this.gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+        this.world = this.gun.get('leave_a_trace_world_v3');
 
         // Theme (Default to Dark)
         this.theme = localStorage.getItem('theme_v1') || 'dark';
@@ -35,6 +36,31 @@ class TraceApp {
         this.analytics = JSON.parse(localStorage.getItem('trace_analytics') || '{"visits":0, "clears":0}');
         this.analytics.visits++;
         localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
+
+        // Global Sync Listeners
+        this.world.get('traces').map().on((data, id) => {
+            if (!data) return;
+            // Check if we already have it
+            if (!this.traces.find(t => t.id === data.id)) {
+                // Gun sends data as objects, points might be JSON stringified if they were complex
+                const trace = { ...data };
+                if (typeof trace.points === 'string') {
+                    try { trace.points = JSON.parse(trace.points); } catch (e) { }
+                }
+                this.traces.push(trace);
+                this.render();
+                this.updateStats();
+            }
+        });
+
+        this.world.get('reset').on((val) => {
+            if (val && val.timestamp > (this.lastReset || 0)) {
+                this.lastReset = val.timestamp;
+                this.traces = [];
+                this.render();
+                this.updateStats();
+            }
+        });
 
         this.init();
         this.render(); // Initial render
@@ -138,24 +164,6 @@ class TraceApp {
             localStorage.setItem('theme_v1', this.theme);
             this.render();
         });
-
-        // Real-time listener
-        this.syncChannel.onmessage = (event) => {
-            const { type, payload } = event.data;
-            if (type === 'NEW_TRACE') {
-                this.traces.push(payload);
-                this.render();
-                this.updateStats();
-            } else if (type === 'UNDO') {
-                this.traces = this.traces.filter(t => t.id !== payload.id);
-                this.render();
-                this.updateStats();
-            } else if (type === 'CLEAR_WORLD') {
-                this.traces = [];
-                this.render();
-                this.updateStats();
-            }
-        };
 
         this.updateStats();
     }
@@ -296,8 +304,12 @@ class TraceApp {
         };
         this.traces.push(this.currentStroke);
         this.localHistory.push(this.currentStroke.id);
+        // Sync to Gun
+        const syncTrace = { ...this.currentStroke };
+        syncTrace.points = JSON.stringify(syncTrace.points); // Gun likes flat objects better
+        this.world.get('traces').get(syncTrace.id).put(syncTrace);
+
         this.updateStats();
-        this.syncChannel.postMessage({ type: 'NEW_TRACE', payload: this.currentStroke });
     }
 
     handleMouseMove(e) {
@@ -326,7 +338,7 @@ class TraceApp {
         if (this.localHistory.length === 0) return;
         const lastId = this.localHistory.pop();
         this.traces = this.traces.filter(t => t.id !== lastId);
-        this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
+        this.world.get('traces').get(lastId).put(null); // Delete from Gun
         this.saveTraces();
         this.render();
         this.updateStats();
@@ -413,8 +425,11 @@ class TraceApp {
             this.saveTraces();
             this.render();
             this.updateStats();
-            this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
-            localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
+            this.world.get('reset').put({ timestamp: Date.now() });
+            // Gun map delete is tricky, best to nullify or use reset flag
+            this.world.get('traces').map().once((data, id) => {
+                this.world.get('traces').get(id).put(null);
+            });
             this.showAdminPanel(); // Refresh stats
         }
     }

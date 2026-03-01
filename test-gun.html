@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+</head>
+<body>
+<script>
+    const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+    gun.get('testnode999').put({hello: "world"});
+    gun.get('testnode999').on((data) => {
+        console.log("Got:", data.hello);
+    });
+</script>
+</body>
+</html>
