@@ -98,13 +98,16 @@ class TraceApp {
 
         // Identity Modal
         const modal = document.getElementById('identity-modal');
-        if (!this.user) {
+        // Admin always takes priority for the UI
+        if (this.isAdmin) {
+            modal.classList.add('hidden');
+        } else if (!this.user || !this.user.nickname || !this.user.password) {
             this.sessionSeed = Math.random().toString(36).substr(2, 9);
             modal.classList.remove('hidden');
             this.updateSetupPreview('');
         } else {
-            console.info('Auto-login: Skipping modal.');
-            modal.classList.add('hidden'); // CRITICAL FIX: Ensure it's hidden if user exists
+            console.info('Identity Persistent: Verified.');
+            modal.classList.add('hidden');
             this.updateIdentityDisplay();
         }
 
@@ -121,10 +124,12 @@ class TraceApp {
                     adminModal.classList.add('hidden');
                     document.body.classList.add('is-admin');
                     this.showAdminPanel();
+                    console.info('Admin: Authenticated.');
                 } else {
                     const error = document.getElementById('admin-login-error');
                     error.innerText = 'incorrect passphrase.';
                     error.style.opacity = '1';
+                    setTimeout(() => error.style.opacity = '0', 3000);
                 }
             };
         }
@@ -296,8 +301,13 @@ class TraceApp {
     saveIdentity() {
         const nickInput = document.getElementById('nickname-input');
         const passInput = document.getElementById('user-password-input');
-        const nick = nickInput.value.trim() || 'anonymous';
+        const nick = nickInput.value.trim();
         const pass = passInput.value.trim();
+
+        if (nick.length < 2 || pass.length < 2) {
+            alert('please enter both nickname and password (min 2 chars).');
+            return;
+        }
 
         const seed = nick + (this.sessionSeed || Math.random());
 
@@ -313,7 +323,9 @@ class TraceApp {
 
         document.getElementById('identity-modal').classList.add('hidden');
         this.updateIdentityDisplay();
+        this.setupRealtime(); // Re-init with new user data
         this.trackPresence();
+        console.info('Identity Saved:', this.user.nickname);
     }
 
     loadIdentity() {
