@@ -22,13 +22,15 @@ class TraceApp {
         this.traces = []; // Now synced via Gun
         this.localHistory = []; // For Undo (Ctrl+Z)
 
-        // Real-time synchronization (Gun.js with multiple relay peers)
+        // Real-time synchronization (Gun.js with broad peer network)
         this.gun = Gun([
             'https://gun-manhattan.herokuapp.com/gun',
             'https://gun-relay.us-east-1.cleverapps.io/gun',
-            'https://gun-us.herokuapp.com/gun'
+            'https://gun-us.herokuapp.com/gun',
+            'https://gunjs.herokuapp.com/gun',
+            'https://e2ee.xyz:8443/gun'
         ]);
-        this.world = this.gun.get('leave_a_trace_v4_stream');
+        this.world = this.gun.get('leave_a_trace_v5_final');
 
         // Theme (Default to Dark)
         this.theme = localStorage.getItem('theme_v1') || 'dark';
@@ -41,7 +43,7 @@ class TraceApp {
         this.analytics.visits++;
         localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
 
-        // Global Sync Listeners (Streaming Version)
+        // Global Sync Listeners (Atomic Streaming)
         this.world.get('traces').map().on((meta, strokeId) => {
             if (!meta) {
                 this.traces = this.traces.filter(t => t.id !== strokeId);
@@ -51,22 +53,26 @@ class TraceApp {
 
             let trace = this.traces.find(t => t.id === strokeId);
             if (!trace) {
-                trace = { ...meta, points: [] };
+                // Initialize the localized trace object
+                trace = { ...meta, id: strokeId, points: [] };
                 this.traces.push(trace);
 
-                // Now subscribe to points for THIS specific stroke
+                // Watch for incoming points for this specific stroke
                 this.world.get('traces').get(strokeId).get('points').map().on((pos, pointId) => {
                     if (!pos) return;
-                    // Check if point already exists to avoid dupes from Gun's P2P nature
-                    if (!trace.points.some(p => p.id === pointId)) {
-                        trace.points.push({ ...pos, id: pointId });
-                        // Sort by timestamp if available or just render
+                    if (!trace.points.find(p => p.id === pointId)) {
+                        // Include timestamp for chronological sorting
+                        trace.points.push({ ...pos, id: pointId, t: pos.t || Date.now() });
+                        // Re-sort to ensure lines aren't jagged due to latency
+                        trace.points.sort((a, b) => a.t - b.t);
                         this.render();
                         this.updateStats();
                     }
                 });
             }
         });
+
+        console.log('connected to trace network. listening for marks...');
 
         this.world.get('reset').on((val) => {
             if (val && val.timestamp > (this.lastReset || 0)) {
@@ -357,10 +363,12 @@ class TraceApp {
 
     syncPoint(pos) {
         if (!this.currentStroke) return;
-        const pointId = `p_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const now = Date.now();
+        const pointId = `p_${now}_${Math.random().toString(36).substr(2, 5)}`;
         this.world.get('traces').get(this.currentStroke.id).get('points').get(pointId).put({
             x: pos.x,
-            y: pos.y
+            y: pos.y,
+            t: now // Server-side time sort key
         });
     }
 
@@ -377,20 +385,40 @@ class TraceApp {
     // --- Rendering ---
 
     render() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        const now = Date.now();
-        this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
+        if (this.renderRequested) return;
+        this.renderRequested = true;
 
-        this.traces.forEach(stroke => {
-            const elapsed = now - stroke.timestamp;
-            const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
-            this.ctx.globalAlpha = fadeAlpha;
-            this.drawFullStroke(stroke);
+        requestAnimationFrame(() => {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            const now = Date.now();
+
+            // Filter out old traces
+            this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
+
+            this.traces.forEach(stroke => {
+                if (!stroke.points || stroke.points.length < 2) return;
+
+                const elapsed = now - stroke.timestamp;
+                const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
+                if (fadeAlpha <= 0) return;
+
+                this.ctx.globalAlpha = fadeAlpha;
+                this.drawFullStroke(stroke);
+            });
+
+            this.ctx.globalAlpha = 1.0;
+            this.renderRequested = false;
         });
-        this.ctx.globalAlpha = 1.0;
     }
 
     drawFullStroke(stroke) {
+        // Ensure points are sorted chronologically
+        if (!stroke._sorted) {
+            stroke.points.sort((a, b) => (a.t || 0) - (b.t || 0));
+            // We only flag as sorted if the stroke is finished or we have a good reason
+            // but for now, we sort every time it grows for safety
+        }
+
         for (let i = 1; i < stroke.points.length; i++) {
             this.drawSegment(stroke.points[i - 1], stroke.points[i], stroke.color, stroke.size);
         }
