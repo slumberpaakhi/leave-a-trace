@@ -25,8 +25,8 @@ class TraceApp {
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
         this.syncChannel = new BroadcastChannel('trace_global_sync');
 
-        // Theme
-        this.theme = localStorage.getItem('theme_v1') || 'light';
+        // Theme (Default to Dark)
+        this.theme = localStorage.getItem('theme_v1') || 'dark';
         document.body.setAttribute('data-theme', this.theme);
 
         // Admin State
@@ -182,6 +182,29 @@ class TraceApp {
         document.body.style.cursor = `url("${url}") 16 2, crosshair`;
     }
 
+    setCookie(name, value, days = 365) {
+        const expires = new Date();
+        expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+        document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+    }
+
+    getCookie(name) {
+        const nameEQ = name + "=";
+        const ca = document.cookie.split(';');
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) === 0) {
+                try {
+                    return JSON.parse(decodeURIComponent(c.substring(nameEQ.length, c.length)));
+                } catch (e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
     // --- Identity ---
 
     getAvatarUrl(seed) {
@@ -207,12 +230,17 @@ class TraceApp {
             avatar: this.getAvatarUrl(seed)
         };
 
+        this.setCookie('trace_user_cookie', this.user);
         localStorage.setItem('trace_user', JSON.stringify(this.user));
+
         document.getElementById('identity-modal').classList.add('hidden');
         this.updateIdentityDisplay();
     }
 
     loadIdentity() {
+        const cookieUser = this.getCookie('trace_user_cookie');
+        if (cookieUser) return cookieUser;
+
         const saved = localStorage.getItem('trace_user');
         return saved ? JSON.parse(saved) : null;
     }
@@ -244,10 +272,11 @@ class TraceApp {
 
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
-        // ClientX/Y + Scroll = World coordinates
+        // Accounting for mobile zoom scale (0.5x)
+        const scale = window.innerWidth < 768 ? 0.5 : 1.0;
         return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
+            x: (e.clientX - rect.left) / scale,
+            y: (e.clientY - rect.top) / scale
         };
     }
 
