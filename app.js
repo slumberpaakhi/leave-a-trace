@@ -101,12 +101,13 @@ class TraceApp {
         // Admin always takes priority for the UI
         if (this.isAdmin) {
             modal.classList.add('hidden');
-        } else if (!this.user || !this.user.nickname || !this.user.password) {
+        } else if (!this.user || !this.user.nickname || !this.user.password || this.user.password.length < 4) {
             this.sessionSeed = Math.random().toString(36).substr(2, 9);
             modal.classList.remove('hidden');
             this.updateSetupPreview('');
+            console.info('Identity: Verification Required.');
         } else {
-            console.info('Identity Persistent: Verified.');
+            console.info('Identity: Persistent Session Verified.');
             modal.classList.add('hidden');
             this.updateIdentityDisplay();
         }
@@ -298,25 +299,40 @@ class TraceApp {
         if (previewEl) this.renderAvatar(previewEl, this.getAvatarUrl(seed));
     }
 
-    saveIdentity() {
+    async saveIdentity() {
         const nickInput = document.getElementById('nickname-input');
         const passInput = document.getElementById('user-password-input');
         const nick = nickInput.value.trim();
         const pass = passInput.value.trim();
 
-        if (nick.length < 2 || pass.length < 2) {
-            alert('please enter both nickname and password (min 2 chars).');
+        if (nick.length < 2 || pass.length < 4) {
+            alert('please enter both nickname and password (min 4 chars).');
             return;
         }
 
         const seed = nick + (this.sessionSeed || Math.random());
 
-        this.user = {
-            id: Math.random().toString(36).substr(2, 9),
-            nickname: nick,
-            password: pass,
-            avatar: this.getAvatarUrl(seed)
-        };
+        try {
+            const res = await fetch('/api/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nickname: nick, password: pass })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'auth failed');
+                return;
+            }
+
+            this.user = {
+                ...data.user,
+                avatar: this.getAvatarUrl(nick + this.sessionSeed)
+            };
+        } catch (e) {
+            alert('auth error');
+            return;
+        }
 
         this.setCookie('trace_user_cookie', this.user);
         localStorage.setItem('trace_user_v2', JSON.stringify(this.user));
