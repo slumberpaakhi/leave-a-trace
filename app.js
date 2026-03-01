@@ -1,7 +1,6 @@
-/**
- * leaving a trace - global real-time version
- * features: identity, real-time sync, 24h fading, undo, brush sizing, hover discovery.
- */
+const SB_URL = 'https://izdwvipihjtpjxoefyuq.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6ZHd2aXBpaGp0cGp4b2VmeXVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzNjQ0OTgsImV4cCI6MjA4Nzk0MDQ5OH0.HrlWvT0q0mE92eoGkMgofFxU7WNDdD2krqO5638nQkU';
+const supabase = (typeof window.supabase !== 'undefined') ? window.supabase.createClient(SB_URL, SB_KEY) : null;
 
 class TraceApp {
     constructor() {
@@ -36,13 +35,80 @@ class TraceApp {
         this.analytics = { visits: 0, clears: 0 };
 
         this.init();
-        this.loadWorld(); // Fetch global state
+        this.loadWorld();
         this.setCursor(this.currentColor);
+        this.setupRealtime();
 
-        // Global Sync: Poll every 30 seconds for world updates
-        setInterval(() => this.loadWorld(), 30000);
         // Fading update: Every minute
         setInterval(() => this.render(), 60000);
+    }
+
+    setupRealtime() {
+        if (!supabase) return;
+        this.remoteCursors = new Map();
+        this.presenceContainer = document.getElementById('remote-cursors-layer');
+
+        this.channel = supabase.channel('world_presence', {
+            config: { presence: { key: this.user ? this.user.id : 'anon' } }
+        });
+
+        this.channel
+            .on('presence', { event: 'sync' }, () => {
+                const state = this.channel.presenceState();
+                console.log('Syncing presence', state);
+            })
+            .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+                console.log('Join', key, newPresences);
+            })
+            .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+                const cursor = this.remoteCursors.get(key);
+                if (cursor) {
+                    cursor.remove();
+                    this.remoteCursors.delete(key);
+                }
+            })
+            .on('broadcast', { event: 'cursor' }, ({ payload }) => {
+                this.updateRemoteCursor(payload);
+            })
+            .on('broadcast', { event: 'stroke' }, ({ payload }) => {
+                // Real-time stroke visibility before official KV save
+                if (!this.traces.some(t => t.id === payload.id)) {
+                    this.traces.push(payload);
+                    this.render();
+                    this.updateStats();
+                }
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED' && this.user) {
+                    await this.channel.track({
+                        id: this.user.id,
+                        nickname: this.user.nickname,
+                        avatar: this.user.avatar,
+                        online_at: new Date().toISOString(),
+                    });
+                }
+            });
+    }
+
+    updateRemoteCursor(data) {
+        if (!this.user || data.id === this.user.id) return;
+        let cursor = this.remoteCursors.get(data.id);
+        if (!cursor) {
+            cursor = document.createElement('div');
+            cursor.className = 'remote-cursor';
+            cursor.innerHTML = `
+                <svg class="ghost-crayon" style="fill:${data.color}" viewBox="0 0 32 32">
+                    <path d="M16 2 L4 22 L12 22 L11 30 L21 30 L20 22 L28 22 Z" stroke="black" stroke-width="1"/>
+                </svg>
+                <div class="cursor-label">
+                    <div class="cursor-avatar"><img src="${data.avatar}" style="width:100%"></div>
+                    <span>${data.nickname}</span>
+                </div>
+            `;
+            this.presenceContainer.appendChild(cursor);
+            this.remoteCursors.set(data.id, cursor);
+        }
+        cursor.style.transform = `translate(${data.pos.x}px, ${data.pos.y}px)`;
     }
 
     init() {
@@ -303,6 +369,22 @@ class TraceApp {
 
     handleMouseMove(e) {
         const pos = this.getCoord(e);
+
+        // Broadcast local cursor to others
+        if (this.channel && this.user) {
+            this.channel.send({
+                type: 'broadcast',
+                event: 'cursor',
+                payload: {
+                    id: this.user.id,
+                    nickname: this.user.nickname,
+                    avatar: this.user.avatar,
+                    color: this.currentColor,
+                    pos: pos
+                }
+            });
+        }
+
         if (this.isDrawing) {
             const lastPoint = this.currentStroke.points[this.currentStroke.points.length - 1];
             const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
@@ -320,8 +402,16 @@ class TraceApp {
     stopDrawing() {
         if (!this.isDrawing) return;
         this.isDrawing = false;
-        // Global persistence: Post the finished stroke to the cloud
         if (this.currentStroke) {
+            // Instant broadcast for others already in the world
+            if (this.channel) {
+                this.channel.send({
+                    type: 'broadcast',
+                    event: 'stroke',
+                    payload: this.currentStroke
+                });
+            }
+            // Global persistence store (Cloudflare API)
             fetch('/api/traces', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

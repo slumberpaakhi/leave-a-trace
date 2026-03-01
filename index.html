@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>leaving a trace | every step matters</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -37,6 +38,7 @@
 
         <main id="trace-container">
             <div id="canvas-viewport">
+                <div id="remote-cursors-layer" style="position: absolute; top:0; left:0; pointer-events: none;"></div>
                 <canvas id="trace-canvas"></canvas>
             </div>
 

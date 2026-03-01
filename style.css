@@ -46,6 +46,45 @@ body {
     filter: brightness(0.95);
 }
 
+/* Real-time Presence Cursors */
+.remote-cursor {
+    position: absolute;
+    pointer-events: none;
+    z-index: 999;
+    transition: transform 0.1s linear;
+    will-change: transform;
+}
+
+.ghost-crayon {
+    width: 24px;
+    height: 24px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.cursor-label {
+    position: absolute;
+    top: 28px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--picker-bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 2rem;
+    font-size: 0.65rem;
+    white-space: nowrap;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.cursor-avatar {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    overflow: hidden;
+}
+
 /* Administrative & Overlay Logic */
 
 /* Admin Logic - Only show clear button in admin mode */
