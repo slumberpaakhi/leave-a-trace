@@ -20,7 +20,6 @@ class TraceApp {
         // Data
         this.traces = [];
         this.localHistory = [];
-        this.redoHistory = [];
         this.isPanMode = false;
 
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
@@ -64,10 +63,17 @@ class TraceApp {
                 this.updateStats();
             }
         });
+
+        this.channel.bind('clear-world', () => {
+            console.log('Global Clear Event Received');
+            this.traces = [];
+            this.localHistory = [];
+            this.render();
+            this.updateStats();
+        });
     }
 
     async trackPresence() {
-        // Pusher client events or simply notifying others
         if (this.user) {
             console.log('Realtime connected via Pusher');
         }
@@ -100,14 +106,11 @@ class TraceApp {
 
         // Identity Modal
         const modal = document.getElementById('identity-modal');
-        // Admin priority
         if (this.isAdmin) {
             modal.classList.add('hidden');
         } else {
-            console.log("Checking session...");
             const savedUser = this.loadIdentity();
             if (savedUser && savedUser.nickname && savedUser.password && savedUser.password.length >= 4) {
-                console.info('Identity: Permanent Session Verified.');
                 this.user = savedUser;
                 modal.classList.add('hidden');
                 this.updateIdentityDisplay();
@@ -116,7 +119,6 @@ class TraceApp {
             } else {
                 this.sessionSeed = Math.random().toString(36).substr(2, 9);
                 modal.classList.remove('hidden');
-                console.info('Identity: New Session Required.');
             }
         }
 
@@ -133,7 +135,6 @@ class TraceApp {
                     adminModal.classList.add('hidden');
                     document.body.classList.add('is-admin');
                     this.showAdminPanel();
-                    console.info('Admin: Authenticated.');
                 } else {
                     const error = document.getElementById('admin-login-error');
                     error.innerText = 'incorrect passphrase.';
@@ -148,14 +149,18 @@ class TraceApp {
         const userPassInput = document.getElementById('user-password-input');
 
         [nicknameInput, userPassInput].forEach(inp => {
-            inp.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') this.saveIdentity();
-            });
+            if (inp) {
+                inp.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.saveIdentity();
+                });
+            }
         });
 
-        nicknameInput.addEventListener('input', (e) => {
-            this.updateSetupPreview(e.target.value);
-        });
+        if (nicknameInput) {
+            nicknameInput.addEventListener('input', (e) => {
+                this.updateSetupPreview(e.target.value);
+            });
+        }
 
         // Hiding instruments for admin
         if (this.isAdmin) {
@@ -164,15 +169,17 @@ class TraceApp {
         }
 
         // Toolbar Tool Listeners
-        document.getElementById('undo-btn').onclick = () => this.undo();
-        document.getElementById('redo-btn').onclick = () => this.redo();
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) undoBtn.onclick = () => this.undo();
 
         const panBtn = document.getElementById('pan-btn');
-        panBtn.onclick = () => {
-            this.isPanMode = !this.isPanMode;
-            panBtn.classList.toggle('active', this.isPanMode);
-            this.setCursor(this.isPanMode ? 'pan' : this.currentColor);
-        };
+        if (panBtn) {
+            panBtn.onclick = () => {
+                this.isPanMode = !this.isPanMode;
+                panBtn.classList.toggle('active', this.isPanMode);
+                this.setCursor(this.isPanMode ? 'pan' : this.currentColor);
+            };
+        }
 
         // Initial Active States
         const obsidian = document.querySelector('.color-btn[data-color="#2d3436"]');
@@ -186,16 +193,15 @@ class TraceApp {
                 if (sizeHint) sizeHint.innerText = this.currentSize;
             };
         }
-        // Toolbar Color Listeners
+
+        // Color buttons
         document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.onclick = () => {
+            btn.addEventListener('click', () => {
                 document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 this.currentColor = btn.dataset.color;
-                const preview = document.getElementById('color-preview');
-                if (preview) preview.style.backgroundColor = this.currentColor;
-                if (!this.isPanMode) this.setCursor(this.currentColor);
-            };
+                this.setCursor(this.currentColor);
+            });
         });
 
         // Input listeners
@@ -209,7 +215,7 @@ class TraceApp {
             this.startDrawing({ clientX: touch.clientX, clientY: touch.clientY });
         });
         this.canvas.addEventListener('touchmove', (e) => {
-            if (e.touches.length > 1) return; // Allow two-finger scroll
+            if (e.touches.length > 1) return;
             e.preventDefault();
             const touch = e.touches[0];
             this.handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
@@ -224,39 +230,30 @@ class TraceApp {
             }
         });
 
-        // Color buttons
-        document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.currentColor = btn.dataset.color;
-                this.setCursor(this.currentColor);
-            });
-        });
-
-        // Size slider
-        document.getElementById('size-slider').addEventListener('input', (e) => {
-            this.currentSize = parseInt(e.target.value);
-        });
-
         // Reset button
-        document.getElementById('reset-btn').addEventListener('click', () => this.clearAll());
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) resetBtn.addEventListener('click', () => this.clearAll());
 
         // Theme toggle
-        document.getElementById('theme-toggle').addEventListener('click', () => {
-            this.theme = this.theme === 'light' ? 'dark' : 'light';
-            document.body.setAttribute('data-theme', this.theme);
-            localStorage.setItem('theme_v1', this.theme);
-            this.render();
-        });
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                this.theme = this.theme === 'light' ? 'dark' : 'light';
+                document.body.setAttribute('data-theme', this.theme);
+                localStorage.setItem('theme_v1', this.theme);
+                this.render();
+            });
+        }
 
-        // Real-time listener
+        // Local sync channel listener
         this.syncChannel.onmessage = (event) => {
             const { type, payload } = event.data;
             if (type === 'NEW_TRACE') {
-                this.traces.push(payload);
-                this.render();
-                this.updateStats();
+                if (!this.traces.some(t => t.id === payload.id)) {
+                    this.traces.push(payload);
+                    this.render();
+                    this.updateStats();
+                }
             } else if (type === 'UNDO') {
                 this.traces = this.traces.filter(t => t.id !== payload.id);
                 this.render();
@@ -287,7 +284,7 @@ class TraceApp {
                 </filter>
             </defs>
             <g filter='url(%23crayonTexture)'>
-                <path d='M16 2 L4 22 L12 22 L11 30 L21 30 L20 22 L28 22 Z' fill='%23${colorPlain}' stroke='black' stroke-width='1.5' stroke-linejoin='round'/>
+                <path d='M16 2 L4 22 L11 30 L21 30 L20 22 L28 22 Z' fill='%23${colorPlain}' stroke='black' stroke-width='1.5' stroke-linejoin='round'/>
             </g>
         </svg>`.replace(/\n/g, '').replace(/\s+/g, ' ');
 
@@ -299,7 +296,6 @@ class TraceApp {
         const d = new Date();
         d.setTime(d.getTime() + (365 * 24 * 60 * 60 * 1000));
         const expires = "expires=" + d.toUTCString();
-        // Ensure path / so it's global for the site
         document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; ${expires}; path=/; SameSite=Lax`;
     }
 
@@ -321,15 +317,11 @@ class TraceApp {
         return null;
     }
 
-    // --- Identity ---
-
     getAvatarUrl(seed) {
-        // Pixel-art style with some waxy colors. Consistent seed.
         return `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(seed)}`;
     }
 
     updateSetupPreview(nick) {
-        // Mix the session seed with the nickname so even 'anonymous' looks random per user
         const seed = nick.trim() + (this.sessionSeed || 'init');
         const previewEl = document.getElementById('setup-avatar-preview');
         if (previewEl) this.renderAvatar(previewEl, this.getAvatarUrl(seed));
@@ -345,8 +337,6 @@ class TraceApp {
             alert('please enter both nickname and password (min 4 chars).');
             return;
         }
-
-        const seed = nick + (this.sessionSeed || Math.random());
 
         try {
             const res = await fetch('/api/auth', {
@@ -375,61 +365,47 @@ class TraceApp {
 
         document.getElementById('identity-modal').classList.add('hidden');
         this.updateIdentityDisplay();
-        this.setupRealtime(); // Re-init with new user data
+        this.setupRealtime();
         this.trackPresence();
-        console.info('Identity Saved:', this.user.nickname);
     }
 
     loadIdentity() {
         try {
             const KEY = 'trace_user_v2';
-            // 1. Try LocalStorage
             let saved = localStorage.getItem(KEY);
             if (saved && saved !== "undefined" && saved !== "null") {
                 const user = JSON.parse(saved);
-                if (user && user.id) {
-                    console.info('Identity: Loaded from LocalStorage');
-                    return user;
-                }
+                if (user && user.id) return user;
             }
 
-            // 2. Try Cookie fallback
             const cookieUser = this.getCookie('trace_user_cookie');
             if (cookieUser && cookieUser.id) {
-                console.info('Identity: Loaded from Cookie');
                 localStorage.setItem(KEY, JSON.stringify(cookieUser));
                 return cookieUser;
             }
-
-            console.info('Identity: No persistent user found.');
             return null;
         } catch (e) {
-            console.warn('Identity: Corruption detected, resetting.', e);
             localStorage.removeItem('trace_user_v2');
             return null;
         }
     }
 
     updateIdentityDisplay() {
-        const nickEls = [document.getElementById('current-user-nickname')];
-        const avatarEls = [document.getElementById('current-user-avatar')];
-        nickEls.forEach(el => el.innerText = this.user.nickname);
-        avatarEls.forEach(el => this.renderAvatar(el, this.user.avatar));
+        const nickEl = document.getElementById('current-user-nickname');
+        const avatarEl = document.getElementById('current-user-avatar');
+        if (nickEl) nickEl.innerText = this.user.nickname;
+        if (avatarEl) this.renderAvatar(avatarEl, this.user.avatar);
     }
 
     renderAvatar(container, avatarUrl) {
         if (typeof avatarUrl !== 'string') {
-            // Fallback for old data or missing avatars
             container.innerHTML = `<div style="width:100%;height:100%;background:#ccc;border-radius:50%"></div>`;
             return;
         }
         container.innerHTML = `<img src="${avatarUrl}" alt="avatar">`;
     }
 
-    // --- Drawing ---
-
     resize() {
-        // Set actual pixel dimensions to match our 3000px world
         this.canvas.width = 3000;
         this.canvas.height = 3000;
         this.render();
@@ -437,7 +413,6 @@ class TraceApp {
 
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
-        // Accounting for mobile zoom scale (0.5x)
         const scale = window.innerWidth < 768 ? 0.5 : 1.0;
         return {
             x: (e.clientX - rect.left) / scale,
@@ -446,7 +421,7 @@ class TraceApp {
     }
 
     startDrawing(e) {
-        if (!this.user || this.isAuthenticated) return;
+        if (!this.user || this.isAdmin) return;
 
         if (this.isPanMode) {
             this.isPanning = true;
@@ -456,7 +431,6 @@ class TraceApp {
         }
 
         this.isDrawing = true;
-        this.redoHistory = []; // Reset redo on new stroke
         const pos = this.getCoord(e);
         this.currentStroke = {
             id: Math.random().toString(36).substr(2, 9),
@@ -486,10 +460,9 @@ class TraceApp {
 
         const pos = this.getCoord(e);
 
-        // Broadcast local cursor to others (via relay to avoid Pusher Auth overhead)
         if (this.user) {
             const now = Date.now();
-            if (!this.lastBroadcast || now - this.lastBroadcast > 50) { // Throttle cursor
+            if (!this.lastBroadcast || now - this.lastBroadcast > 50) {
                 this.lastBroadcast = now;
                 fetch('/api/sync', {
                     method: 'POST',
@@ -549,30 +522,11 @@ class TraceApp {
     undo() {
         if (this.localHistory.length === 0) return;
         const lastId = this.localHistory.pop();
-        const stroke = this.traces.find(t => t.id === lastId);
-        if (stroke) this.redoHistory.push(stroke);
         this.traces = this.traces.filter(t => t.id !== lastId);
         this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
         this.render();
         this.updateStats();
     }
-
-    redo() {
-        if (this.redoHistory.length === 0) return;
-        const stroke = this.redoHistory.pop();
-        this.traces.push(stroke);
-        this.localHistory.push(stroke.id);
-        // Sync redo as a "new stroke" to others
-        fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event: 'new-stroke', payload: stroke })
-        }).catch(() => { });
-        this.render();
-        this.updateStats();
-    }
-
-    // --- Rendering ---
 
     render() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -642,14 +596,10 @@ class TraceApp {
         }
     }
 
-    // --- Global Persistence (Cloudflare API) ---
-
     async loadWorld() {
         try {
             const res = await fetch('/api/traces');
             const data = await res.json();
-
-            // Merge global traces (deduplicate by ID)
             const existingIds = new Set(this.traces.map(t => t.id));
             const newGlobalTraces = data.traces.filter(t => !existingIds.has(t.id));
 
@@ -660,7 +610,6 @@ class TraceApp {
 
             this.analytics = data.analytics || { visits: 0, clears: 0 };
             this.updateStats();
-            console.log(`World Sync: ${this.traces.length} traces active.`);
         } catch (e) {
             console.error('World load failed:', e);
         }
@@ -685,11 +634,17 @@ class TraceApp {
                     this.localHistory = [];
                     this.render();
                     this.updateStats();
+
+                    // Global sync via Pusher
+                    fetch('/api/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ event: 'clear-world', payload: {} })
+                    }).catch(() => { });
+
                     this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
-                    console.log('World cleared successfully.');
                 } else {
                     alert('clear failed.');
-                    console.error('Clear failed with status:', res.status);
                 }
             } catch (e) {
                 console.error('Clear failed:', e);
@@ -702,7 +657,6 @@ class TraceApp {
         const footer = document.querySelector('footer');
         if (footer) footer.classList.add('admin-view');
 
-        // Extract unique contributors
         const contributors = [...new Set(this.traces.map(t => t.nickname))];
         const latestContributor = contributors.length > 0 ? contributors[contributors.length - 1] : 'none';
 
@@ -732,14 +686,10 @@ class TraceApp {
     updateStats() {
         const count = document.getElementById('trace-count');
         if (count) count.innerText = this.traces.length;
-
-        // If admin, also update the dashboard numbers
         if (this.isAuthenticated) {
             this.showAdminPanel();
         }
     }
-
-    loadTraces() { return null; } // Logic moved to loadWorld
 }
 
 window.onload = async () => {
