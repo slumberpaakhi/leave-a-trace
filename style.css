@@ -249,14 +249,24 @@ main {
     width: 100vw;
     position: relative;
     cursor: inherit;
+    overflow: hidden;
+    /* Header/Footer/Overlays stay fixed */
+}
+
+#canvas-viewport {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    /* Enable scrolling */
+    -webkit-overflow-scrolling: touch;
 }
 
 #trace-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    display: block;
+    /* Define world size (larger than viewport for scrollability) */
+    width: 3000px;
+    height: 3000px;
+    background: transparent;
 }
 
 #interface-overlay {

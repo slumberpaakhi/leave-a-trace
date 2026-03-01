@@ -6,6 +6,7 @@
 class TraceApp {
     constructor() {
         this.canvas = document.getElementById('trace-canvas');
+        this.viewport = document.getElementById('canvas-viewport');
         this.ctx = this.canvas.getContext('2d', { alpha: true });
 
         // Settings
@@ -97,6 +98,7 @@ class TraceApp {
             this.startDrawing({ clientX: touch.clientX, clientY: touch.clientY });
         });
         this.canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) return; // Allow two-finger scroll
             e.preventDefault();
             const touch = e.touches[0];
             this.handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
@@ -234,14 +236,25 @@ class TraceApp {
     // --- Drawing ---
 
     resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        // Set actual pixel dimensions to match our 3000px world
+        this.canvas.width = 3000;
+        this.canvas.height = 3000;
         this.render();
     }
 
+    getCoord(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        // ClientX/Y + Scroll = World coordinates
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
     startDrawing(e) {
-        if (!this.user || this.isAuthenticated) return; // Disallow drawing for admins
+        if (!this.user || this.isAuthenticated) return;
         this.isDrawing = true;
+        const pos = this.getCoord(e);
         this.currentStroke = {
             id: Math.random().toString(36).substr(2, 9),
             userId: this.user.id,
@@ -250,7 +263,7 @@ class TraceApp {
             color: this.currentColor,
             size: this.currentSize,
             timestamp: Date.now(),
-            points: [{ x: e.clientX, y: e.clientY }]
+            points: [pos]
         };
         this.traces.push(this.currentStroke);
         this.localHistory.push(this.currentStroke.id);
@@ -259,13 +272,13 @@ class TraceApp {
     }
 
     handleMouseMove(e) {
+        const pos = this.getCoord(e);
         if (this.isDrawing) {
             const lastPoint = this.currentStroke.points[this.currentStroke.points.length - 1];
-            const dist = Math.hypot(e.clientX - lastPoint.x, e.clientY - lastPoint.y);
+            const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
             if (dist > 3) {
-                const newPoint = { x: e.clientX, y: e.clientY };
-                this.currentStroke.points.push(newPoint);
-                this.drawSegment(lastPoint, newPoint, this.currentColor, this.currentSize);
+                this.currentStroke.points.push(pos);
+                this.drawSegment(lastPoint, pos, this.currentColor, this.currentSize);
             }
         } else {
             if (window.matchMedia('(hover: hover)').matches) {
@@ -335,11 +348,13 @@ class TraceApp {
     checkHover(e) {
         const tooltip = document.getElementById('trace-tooltip');
         let found = null;
+        const pos = this.getCoord(e);
+
         for (let i = this.traces.length - 1; i >= 0; i--) {
             const stroke = this.traces[i];
             for (let j = 0; j < stroke.points.length; j += 10) {
                 const p = stroke.points[j];
-                if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 15) {
+                if (Math.hypot(pos.x - p.x, pos.y - p.y) < 15) {
                     found = stroke;
                     break;
                 }
