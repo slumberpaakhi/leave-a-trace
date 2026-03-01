@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>leaving a trace | every step matters</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body data-theme="light">
+    <!-- identity setup modal -->
+    <div id="identity-modal" class="modal">
+        <div class="modal-content">
+            <h2>identify yourself.</h2>
+            <div id="setup-avatar-preview" class="pixel-avatar-small"
+                style="margin: 0 auto 1.5rem auto; width: 64px; height: 64px;"></div>
+            <p>how will the world remember your trace?</p>
+            <input type="text" id="nickname-input" placeholder="enter nickname..." maxlength="15">
+            <button id="save-identity">enter</button>
+        </div>
+    </div>
+
+    <div id="app">
+        <header>
+            <div class="philosophical-header">
+                <h1>everything leaves a trace.</h1>
+                <p>wherever you go, you leave a part of yourself behind. here, your touch is permanent, for a while.</p>
+                <button id="reset-btn" class="reset-link">clear this world</button>
+            </div>
+            <div class="top-right-controls">
+                <button id="theme-toggle" class="icon-btn" aria-label="toggle theme">
+                    <span class="mode-icon"></span>
+                </button>
+            </div>
+        </header>
+
+        <main id="trace-container">
+            <canvas id="trace-canvas"></canvas>
+
+            <!-- hover tooltip -->
+            <div id="trace-tooltip" class="tooltip hidden">
+                <div id="tooltip-avatar" class="pixel-avatar-small"></div>
+                <span id="tooltip-nickname"></span>
+            </div>
+
+            <div id="interface-overlay">
+                <div class="controls-container">
+                    <div class="color-picker">
+                        <button class="color-btn active" data-color="#2d3436"
+                            style="background-color: #2d3436;"></button>
+                        <button class="color-btn" data-color="#d63031" style="background-color: #d63031;"></button>
+                        <button class="color-btn" data-color="#0984e3" style="background-color: #0984e3;"></button>
+                        <button class="color-btn" data-color="#00b894" style="background-color: #00b894;"></button>
+                        <button class="color-btn" data-color="#fdcb6e" style="background-color: #fdcb6e;"></button>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="size-controls">
+                        <input type="range" id="size-slider" min="4" max="24" value="8" step="1">
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="user-info">
+                <div id="current-user-avatar" class="pixel-avatar-tiny"></div>
+                <span id="current-user-nickname">anonymous</span>
+            </div>
+            <div class="stats">
+                <span id="trace-count">0</span> traces in this world
+            </div>
+        </footer>
+    </div>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="app.js" type="module"></script>
+</body>
+
+</html>
