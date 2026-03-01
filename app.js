@@ -22,7 +22,7 @@ class TraceApp {
         this.traces = []; // Now synced via Gun
         this.localHistory = []; // For Undo (Ctrl+Z)
 
-        // Real-time synchronization (Gun.js with broad peer network)
+        // Real-time synchronization (Gun.js - Flat Architecture for maximum reliability)
         this.gun = Gun([
             'https://gun-manhattan.herokuapp.com/gun',
             'https://gun-relay.us-east-1.cleverapps.io/gun',
@@ -30,7 +30,8 @@ class TraceApp {
             'https://gunjs.herokuapp.com/gun',
             'https://e2ee.xyz:8443/gun'
         ]);
-        this.world = this.gun.get('leave_a_trace_v5_final');
+        // Using a fresh flat key for the most stable experience
+        this.world = this.gun.get('trace_world_flat_v6');
 
         // Theme (Default to Dark)
         this.theme = localStorage.getItem('theme_v1') || 'dark';
@@ -43,32 +44,33 @@ class TraceApp {
         this.analytics.visits++;
         localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
 
-        // Global Sync Listeners (Atomic Streaming)
-        this.world.get('traces').map().on((meta, strokeId) => {
-            if (!meta) {
-                this.traces = this.traces.filter(t => t.id !== strokeId);
-                this.render();
-                return;
+        // Global Sync Listener (FLAT POINT ARCHITECTURE - Most Reliable)
+        this.world.get('points').map().on((point, pointId) => {
+            if (!point) return;
+
+            let trace = this.traces.find(t => t.id === point.strokeId);
+            if (!trace) {
+                // If it's a new stroke, create a container locally
+                trace = {
+                    id: point.strokeId,
+                    userId: point.userId,
+                    nickname: point.nickname,
+                    avatar: point.avatar,
+                    color: point.color,
+                    size: point.size,
+                    timestamp: point.strokeTime || Date.now(),
+                    points: []
+                };
+                this.traces.push(trace);
             }
 
-            let trace = this.traces.find(t => t.id === strokeId);
-            if (!trace) {
-                // Initialize the localized trace object
-                trace = { ...meta, id: strokeId, points: [] };
-                this.traces.push(trace);
-
-                // Watch for incoming points for this specific stroke
-                this.world.get('traces').get(strokeId).get('points').map().on((pos, pointId) => {
-                    if (!pos) return;
-                    if (!trace.points.find(p => p.id === pointId)) {
-                        // Include timestamp for chronological sorting
-                        trace.points.push({ ...pos, id: pointId, t: pos.t || Date.now() });
-                        // Re-sort to ensure lines aren't jagged due to latency
-                        trace.points.sort((a, b) => a.t - b.t);
-                        this.render();
-                        this.updateStats();
-                    }
-                });
+            // Sync the point if unique to this browser
+            if (!trace.points.find(p => p.id === pointId)) {
+                trace.points.push({ x: point.x, y: point.y, t: point.t, id: pointId });
+                // Keep points perfectly sorted for smooth lines
+                trace.points.sort((a, b) => a.t - b.t);
+                this.render();
+                this.updateStats();
             }
         });
 
@@ -326,12 +328,7 @@ class TraceApp {
         this.traces.push(this.currentStroke);
         this.localHistory.push(this.currentStroke.id);
 
-        // Sync Metadata (without points yet)
-        const meta = { ...this.currentStroke };
-        delete meta.points;
-        this.world.get('traces').get(meta.id).put(meta);
-
-        // Sync first point
+        // Sync the first point (Flat mode: metadata is inside the point)
         this.syncPoint(pos);
 
         this.updateStats();
@@ -364,12 +361,23 @@ class TraceApp {
     syncPoint(pos) {
         if (!this.currentStroke) return;
         const now = Date.now();
-        const pointId = `p_${now}_${Math.random().toString(36).substr(2, 5)}`;
-        this.world.get('traces').get(this.currentStroke.id).get('points').get(pointId).put({
+        const pointId = `pt_${now}_${Math.random().toString(36).substr(2, 5)}`;
+
+        // Pack metadata into every point for the FLAT structure
+        // This is extremely redundant but 100% reliable for P2P sync
+        const pointData = {
+            strokeId: this.currentStroke.id,
+            nickname: this.currentStroke.nickname,
+            avatar: this.currentStroke.avatar,
+            color: this.currentStroke.color,
+            size: this.currentStroke.size,
+            strokeTime: this.currentStroke.timestamp,
             x: pos.x,
             y: pos.y,
-            t: now // Server-side time sort key
-        });
+            t: now
+        };
+
+        this.world.get('points').get(pointId).put(pointData);
     }
 
     undo() {
@@ -484,9 +492,9 @@ class TraceApp {
             this.render();
             this.updateStats();
             this.world.get('reset').put({ timestamp: Date.now() });
-            // Gun map delete is tricky, best to nullify or use reset flag
-            this.world.get('traces').map().once((data, id) => {
-                this.world.get('traces').get(id).put(null);
+            // Clear flat points
+            this.world.get('points').map().once((data, id) => {
+                this.world.get('points').get(id).put(null);
             });
             this.showAdminPanel(); // Refresh stats
         }
