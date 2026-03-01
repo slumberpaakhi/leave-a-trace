@@ -28,6 +28,13 @@ class TraceApp {
         this.theme = localStorage.getItem('theme_v1') || 'light';
         document.body.setAttribute('data-theme', this.theme);
 
+        // Admin State
+        this.isAdmin = window.location.search.includes('admin=true');
+        this.isAuthenticated = false;
+        this.analytics = JSON.parse(localStorage.getItem('trace_analytics') || '{"visits":0, "clears":0}');
+        this.analytics.visits++;
+        localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
+
         this.init();
         this.render(); // Initial render
         this.setCursor(this.currentColor);
@@ -42,12 +49,24 @@ class TraceApp {
 
         // Identity Modal
         if (!this.user) {
-            // New user - generate a random session seed
             this.sessionSeed = Math.random().toString(36).substr(2, 9);
             document.getElementById('identity-modal').classList.remove('hidden');
             this.updateSetupPreview('');
         } else {
             this.updateIdentityDisplay();
+        }
+
+        // Admin Auth Flow
+        if (this.isAdmin) {
+            const pass = prompt('enter administrator password:');
+            if (pass === '1234') { // Changed clear world to admin only
+                this.isAuthenticated = true;
+                document.body.classList.add('is-admin');
+                this.showAdminPanel();
+            } else {
+                alert('access denied.');
+                window.location.href = window.location.pathname;
+            }
         }
 
         document.getElementById('save-identity').addEventListener('click', () => this.saveIdentity());
@@ -336,14 +355,24 @@ class TraceApp {
     // --- Persistence ---
 
     clearAll() {
+        if (!this.isAuthenticated) return;
         if (confirm('this will clear all traces from your view. proceed?')) {
             this.traces = [];
             this.localHistory = [];
+            this.analytics.clears++;
             this.saveTraces();
             this.render();
             this.updateStats();
-            // Broadcast clear if needed (optional for local session-based sync)
             this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
+            localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
+            this.showAdminPanel(); // Refresh stats
+        }
+    }
+
+    showAdminPanel() {
+        const statsEl = document.querySelector('.stats');
+        if (statsEl) {
+            statsEl.innerHTML = `admin: ${this.analytics.visits} visits | ${this.analytics.clears} clears | <span id="trace-count">${this.traces.length}</span> live traces`;
         }
     }
 
