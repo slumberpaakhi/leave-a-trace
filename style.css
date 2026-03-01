@@ -173,6 +173,23 @@ body.is-admin #interface-overlay {
     border: 1px solid rgba(128, 128, 128, 0.1);
 }
 
+@media (max-width: 768px) {
+    .modal-content {
+        padding: 2rem 1.5rem;
+        border-radius: 1.5rem;
+        width: 85%;
+    }
+
+    .modal-content h2 {
+        font-size: 1.3rem;
+    }
+
+    .modal-content p {
+        font-size: 0.85rem;
+        margin-bottom: 1.5rem;
+    }
+}
+
 .modal-content h2 {
     font-size: 1.5rem;
     margin-bottom: 1rem;
@@ -383,34 +400,39 @@ main {
     opacity: 0.1;
 }
 
-.sketchy-preview {
-    width: 38px;
-    height: 38px;
-    border: 2px solid #1a1a1a;
-    border-radius: 6px;
-    background-color: #2d3436;
-    background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0l100 100M100 0L0 100' stroke='rgba(0,0,0,0.1)' stroke-width='1' fill='none'/%3E%3C/svg%3E");
-}
-
-.thickness-group {
+/* Toolbar Color Palette */
+.color-palette {
     display: flex;
-    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0 0.5rem;
     align-items: center;
-    padding-left: 0.4rem;
 }
 
-.thickness-label {
-    font-size: 0.55rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    color: #333;
-    letter-spacing: 0.05em;
-    margin-bottom: -2px;
+.color-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid #222;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    padding: 0;
 }
 
-.thickness-footer {
-    display: none;
-    /* Hide 'pixels' text to save space */
+.color-btn:hover {
+    transform: scale(1.15);
+}
+
+.color-btn.active::after {
+    content: '';
+    position: absolute;
+    top: -3px;
+    left: -3px;
+    right: -3px;
+    bottom: -3px;
+    border: 1.5px solid #000;
+    border-radius: 50%;
+    pointer-events: none;
 }
 
 .thickness-slider-wrap {
@@ -531,7 +553,7 @@ footer {
 @media (max-width: 768px) {
     header {
         position: fixed;
-        padding: 1.5rem;
+        padding: 1.2rem 1.5rem;
         flex-direction: row;
         justify-content: space-between;
         align-items: flex-start;
@@ -542,16 +564,18 @@ footer {
 
     .philosophical-header {
         pointer-events: auto;
-        max-width: 60%;
+        max-width: 70%;
     }
 
     .philosophical-header h1 {
         font-size: 1.1rem;
+        font-weight: 400;
+        letter-spacing: -0.02em;
     }
 
     .philosophical-header p {
-        font-size: 0.75rem;
-        line-height: 1.3;
+        display: none;
+        /* Hide subtitle to save vertical space */
     }
 
     .top-right-controls {
@@ -564,19 +588,84 @@ footer {
     #interface-overlay {
         position: fixed;
         bottom: 1.5rem;
-        left: 1.5rem;
-        transform: none;
+        left: 50%;
+        transform: translateX(-50%);
+        /* Center the toolbar */
         z-index: 100;
+        width: 90%;
+        max-width: 400px;
     }
 
-    .controls-container {
-        padding: 0.4rem;
-        gap: 0.4rem;
+    .sketchy-toolbar {
+        padding: 0.4rem 0.6rem;
+        gap: 0.5rem;
+        justify-content: space-between;
+        background: var(--picker-bg);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 1.5rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
     }
+
+    .tool-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        padding: 9px;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        transition: background 0.2s, transform 0.2s;
+    }
+
+    .tool-btn.active {
+        background: var(--text-primary) !important;
+    }
+
+    .tool-btn.active svg {
+        fill: var(--bg-color) !important;
+    }
+
+    .tool-btn:active {
+        background: rgba(128, 128, 128, 0.1);
+        transform: scale(0.9);
+    }
+
+    .tool-divider {
+        height: 24px;
+        width: 1px;
+        background: var(--text-secondary);
+        opacity: 0.2;
+    }
+
+    .color-palette {
+        gap: 0.5rem;
+        padding: 0 0.2rem;
+    }
+
+    .color-btn {
+        width: 24px;
+        height: 24px;
+        border: 2px solid transparent;
+        box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.2);
+    }
+
+    .color-btn.active {
+        transform: scale(1.2);
+        box-shadow: 0 0 0 2px var(--text-primary);
+    }
+
+    .thickness-group {
+        display: none;
+        /* Hide slider by default on mobile, or make it more compact */
+    }
+
+    /* Optional: Provide a way to change thickness via long-press or a separate toggle if needed, 
+       but for now we'll just simplify the mobile toolbar to the essentials. */
 
     #remote-cursors-layer,
     #trace-canvas {
-        /* Zoomed out for phone */
+        /* Zoomed out for phone - keeping current logic but ensuring it fills well */
         transform: scale(0.5);
         transform-origin: top left;
         width: 3000px;
@@ -594,16 +683,35 @@ footer {
 
     footer {
         position: fixed;
-        bottom: 1.5rem;
+        bottom: 1rem;
         right: 1.5rem;
         padding: 0;
         width: auto;
         pointer-events: none;
+        display: none;
+        /* Hide footer on very small screens to reduce clutter, or keep it minimal */
+    }
+
+    /* Show user info slightly differently if we want to keep it */
+    body:not(.is-admin) footer {
+        display: flex;
+        bottom: 5.5rem;
+        /* Above toolbar */
+        right: 1.5rem;
     }
 
     .user-info {
         pointer-events: auto;
         justify-content: flex-end;
+        background: var(--picker-bg);
+        padding: 0.3rem 0.6rem;
+        border-radius: 1rem;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(128, 128, 128, 0.1);
+    }
+
+    .stats {
+        display: none;
     }
 }
 

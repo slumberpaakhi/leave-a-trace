@@ -100,18 +100,24 @@ class TraceApp {
 
         // Identity Modal
         const modal = document.getElementById('identity-modal');
-        // Admin always takes priority for the UI
+        // Admin priority
         if (this.isAdmin) {
             modal.classList.add('hidden');
-        } else if (!this.user || !this.user.nickname || !this.user.password || this.user.password.length < 4) {
-            this.sessionSeed = Math.random().toString(36).substr(2, 9);
-            modal.classList.remove('hidden');
-            this.updateSetupPreview('');
-            console.info('Identity: Verification Required.');
         } else {
-            console.info('Identity: Persistent Session Verified.');
-            modal.classList.add('hidden');
-            this.updateIdentityDisplay();
+            console.log("Checking session...");
+            const savedUser = this.loadIdentity();
+            if (savedUser && savedUser.nickname && savedUser.password && savedUser.password.length >= 4) {
+                console.info('Identity: Permanent Session Verified.');
+                this.user = savedUser;
+                modal.classList.add('hidden');
+                this.updateIdentityDisplay();
+                this.setupRealtime();
+                this.trackPresence();
+            } else {
+                this.sessionSeed = Math.random().toString(36).substr(2, 9);
+                modal.classList.remove('hidden');
+                console.info('Identity: New Session Required.');
+            }
         }
 
         // Admin Flow (UI Modal)
@@ -168,30 +174,28 @@ class TraceApp {
             this.setCursor(this.isPanMode ? 'pan' : this.currentColor);
         };
 
-        const colorTrigger = document.getElementById('color-picker-trigger');
-        const nativePicker = document.getElementById('native-color-picker');
-        colorTrigger.onclick = () => nativePicker.click();
-
-        nativePicker.oninput = (e) => {
-            this.currentColor = e.target.value;
-            const preview = document.getElementById('color-preview');
-            if (preview) preview.style.backgroundColor = this.currentColor;
-            if (!this.isPanMode) this.setCursor(this.currentColor);
-        };
+        // Initial Active States
+        const obsidian = document.querySelector('.color-btn[data-color="#2d3436"]');
+        if (obsidian) obsidian.click();
 
         const sizeSlider = document.getElementById('size-slider');
         const sizeHint = document.getElementById('current-size-hint');
-        sizeSlider.oninput = (e) => {
-            this.currentSize = parseInt(e.target.value);
-            if (sizeHint) sizeHint.innerText = this.currentSize;
-        };
-
-        // Old color picking (redundant, but keeping for compatibility if any other logic uses it)
+        if (sizeSlider) {
+            sizeSlider.oninput = (e) => {
+                this.currentSize = parseInt(e.target.value);
+                if (sizeHint) sizeHint.innerText = this.currentSize;
+            };
+        }
+        // Toolbar Color Listeners
         document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.onclick = () => {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
                 this.currentColor = btn.dataset.color;
-                this.setCursor(this.currentColor);
-            });
+                const preview = document.getElementById('color-preview');
+                if (preview) preview.style.backgroundColor = this.currentColor;
+                if (!this.isPanMode) this.setCursor(this.currentColor);
+            };
         });
 
         // Input listeners
