@@ -19,19 +19,11 @@ class TraceApp {
         this.user = this.loadIdentity() || null;
 
         // Data
-        this.traces = []; // Now synced via Gun
+        this.traces = this.loadTraces() || [];
         this.localHistory = []; // For Undo (Ctrl+Z)
 
-        // Real-time synchronization (Gun.js - Flat Architecture for maximum reliability)
-        this.gun = Gun([
-            'https://gun-manhattan.herokuapp.com/gun',
-            'https://gun-relay.us-east-1.cleverapps.io/gun',
-            'https://gun-us.herokuapp.com/gun',
-            'https://gunjs.herokuapp.com/gun',
-            'https://e2ee.xyz:8443/gun'
-        ]);
-        // Using a fresh flat key for the most stable experience
-        this.world = this.gun.get('trace_world_flat_v6');
+        // Real-time synchronization (BroadcastChannel for tab-to-tab)
+        this.syncChannel = new BroadcastChannel('trace_global_sync');
 
         // Theme (Default to Dark)
         this.theme = localStorage.getItem('theme_v1') || 'dark';
@@ -40,56 +32,16 @@ class TraceApp {
         // Admin State
         this.isAdmin = window.location.search.includes('admin=true');
         this.isAuthenticated = false;
-        this.analytics = JSON.parse(localStorage.getItem('trace_analytics') || '{"visits":0, "clears":0}');
-        this.analytics.visits++;
-        localStorage.setItem('trace_analytics', JSON.stringify(this.analytics));
-
-        // Global Sync Listener (FLAT POINT ARCHITECTURE - Most Reliable)
-        this.world.get('points').map().on((point, pointId) => {
-            if (!point) return;
-
-            let trace = this.traces.find(t => t.id === point.strokeId);
-            if (!trace) {
-                // If it's a new stroke, create a container locally
-                trace = {
-                    id: point.strokeId,
-                    userId: point.userId,
-                    nickname: point.nickname,
-                    avatar: point.avatar,
-                    color: point.color,
-                    size: point.size,
-                    timestamp: point.strokeTime || Date.now(),
-                    points: []
-                };
-                this.traces.push(trace);
-            }
-
-            // Sync the point if unique to this browser
-            if (!trace.points.find(p => p.id === pointId)) {
-                trace.points.push({ x: point.x, y: point.y, t: point.t, id: pointId });
-                // Keep points perfectly sorted for smooth lines
-                trace.points.sort((a, b) => a.t - b.t);
-                this.render();
-                this.updateStats();
-            }
-        });
-
-        console.log('connected to trace network. listening for marks...');
-
-        this.world.get('reset').on((val) => {
-            if (val && val.timestamp > (this.lastReset || 0)) {
-                this.lastReset = val.timestamp;
-                this.traces = [];
-                this.render();
-                this.updateStats();
-            }
-        });
+        this.adminPass = '';
+        this.analytics = { visits: 0, clears: 0 };
 
         this.init();
-        this.render(); // Initial render
+        this.loadWorld(); // Fetch global state
         this.setCursor(this.currentColor);
 
-        // Fading update: Run every minute instead of 60fps
+        // Global Sync: Poll every 30 seconds for world updates
+        setInterval(() => this.loadWorld(), 30000);
+        // Fading update: Every minute
         setInterval(() => this.render(), 60000);
     }
 
@@ -108,8 +60,8 @@ class TraceApp {
 
         // Admin Auth Flow
         if (this.isAdmin) {
-            const pass = prompt('enter administrator password:');
-            if (pass === '1234') { // Changed clear world to admin only
+            this.adminPass = prompt('enter administrator password:');
+            if (this.adminPass === '1234') {
                 this.isAuthenticated = true;
                 document.body.classList.add('is-admin');
                 this.showAdminPanel();
@@ -187,6 +139,24 @@ class TraceApp {
             localStorage.setItem('theme_v1', this.theme);
             this.render();
         });
+
+        // Real-time listener
+        this.syncChannel.onmessage = (event) => {
+            const { type, payload } = event.data;
+            if (type === 'NEW_TRACE') {
+                this.traces.push(payload);
+                this.render();
+                this.updateStats();
+            } else if (type === 'UNDO') {
+                this.traces = this.traces.filter(t => t.id !== payload.id);
+                this.render();
+                this.updateStats();
+            } else if (type === 'CLEAR_WORLD') {
+                this.traces = [];
+                this.render();
+                this.updateStats();
+            }
+        };
 
         this.updateStats();
     }
@@ -327,11 +297,8 @@ class TraceApp {
         };
         this.traces.push(this.currentStroke);
         this.localHistory.push(this.currentStroke.id);
-
-        // Sync the first point (Flat mode: metadata is inside the point)
-        this.syncPoint(pos);
-
         this.updateStats();
+        this.syncChannel.postMessage({ type: 'NEW_TRACE', payload: this.currentStroke });
     }
 
     handleMouseMove(e) {
@@ -342,8 +309,6 @@ class TraceApp {
             if (dist > 3) {
                 this.currentStroke.points.push(pos);
                 this.drawSegment(lastPoint, pos, this.currentColor, this.currentSize);
-
-                this.syncPoint(pos);
             }
         } else {
             if (window.matchMedia('(hover: hover)').matches) {
@@ -355,36 +320,21 @@ class TraceApp {
     stopDrawing() {
         if (!this.isDrawing) return;
         this.isDrawing = false;
-        this.saveTraces();
-    }
-
-    syncPoint(pos) {
-        if (!this.currentStroke) return;
-        const now = Date.now();
-        const pointId = `pt_${now}_${Math.random().toString(36).substr(2, 5)}`;
-
-        // Pack metadata into every point for the FLAT structure
-        // This is extremely redundant but 100% reliable for P2P sync
-        const pointData = {
-            strokeId: this.currentStroke.id,
-            nickname: this.currentStroke.nickname,
-            avatar: this.currentStroke.avatar,
-            color: this.currentStroke.color,
-            size: this.currentStroke.size,
-            strokeTime: this.currentStroke.timestamp,
-            x: pos.x,
-            y: pos.y,
-            t: now
-        };
-
-        this.world.get('points').get(pointId).put(pointData);
+        // Global persistence: Post the finished stroke to the cloud
+        if (this.currentStroke) {
+            fetch('/api/traces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.currentStroke)
+            }).catch(e => console.error('Cloud save failed:', e));
+        }
     }
 
     undo() {
         if (this.localHistory.length === 0) return;
         const lastId = this.localHistory.pop();
         this.traces = this.traces.filter(t => t.id !== lastId);
-        this.world.get('traces').get(lastId).put(null); // Delete from Gun
+        this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
         this.saveTraces();
         this.render();
         this.updateStats();
@@ -393,40 +343,20 @@ class TraceApp {
     // --- Rendering ---
 
     render() {
-        if (this.renderRequested) return;
-        this.renderRequested = true;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        const now = Date.now();
+        this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
 
-        requestAnimationFrame(() => {
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            const now = Date.now();
-
-            // Filter out old traces
-            this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
-
-            this.traces.forEach(stroke => {
-                if (!stroke.points || stroke.points.length < 2) return;
-
-                const elapsed = now - stroke.timestamp;
-                const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
-                if (fadeAlpha <= 0) return;
-
-                this.ctx.globalAlpha = fadeAlpha;
-                this.drawFullStroke(stroke);
-            });
-
-            this.ctx.globalAlpha = 1.0;
-            this.renderRequested = false;
+        this.traces.forEach(stroke => {
+            const elapsed = now - stroke.timestamp;
+            const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
+            this.ctx.globalAlpha = fadeAlpha;
+            this.drawFullStroke(stroke);
         });
+        this.ctx.globalAlpha = 1.0;
     }
 
     drawFullStroke(stroke) {
-        // Ensure points are sorted chronologically
-        if (!stroke._sorted) {
-            stroke.points.sort((a, b) => (a.t || 0) - (b.t || 0));
-            // We only flag as sorted if the stroke is finished or we have a good reason
-            // but for now, we sort every time it grows for safety
-        }
-
         for (let i = 1; i < stroke.points.length; i++) {
             this.drawSegment(stroke.points[i - 1], stroke.points[i], stroke.color, stroke.size);
         }
@@ -480,23 +410,54 @@ class TraceApp {
         }
     }
 
-    // --- Persistence ---
+    // --- Global Persistence (Cloudflare API) ---
 
-    clearAll() {
-        if (!this.isAuthenticated) return;
-        if (confirm('this will clear all traces from your view. proceed?')) {
-            this.traces = [];
-            this.localHistory = [];
-            this.analytics.clears++;
-            this.saveTraces();
+    async loadWorld() {
+        try {
+            const res = await fetch('/api/traces');
+            const data = await res.json();
+
+            // Merge global traces (prefer local for real-time smoothness)
+            const localIds = new Set(this.traces.map(t => t.id));
+            const newGlobalTraces = data.traces.filter(t => !localIds.has(t.id));
+            this.traces = [...this.traces, ...newGlobalTraces];
+
+            this.analytics = data.analytics;
+
+            if (this.isAuthenticated) this.showAdminPanel();
             this.render();
             this.updateStats();
-            this.world.get('reset').put({ timestamp: Date.now() });
-            // Clear flat points
-            this.world.get('points').map().once((data, id) => {
-                this.world.get('points').get(id).put(null);
-            });
-            this.showAdminPanel(); // Refresh stats
+        } catch (e) {
+            console.error('World load failed:', e);
+        }
+    }
+
+    async trackVisit() {
+        fetch('/api/visits', { method: 'POST' }).catch(() => { });
+    }
+
+    async clearAll() {
+        if (!this.isAuthenticated) return;
+        if (confirm('this will clear all traces GLOBALLY. proceed?')) {
+            try {
+                const res = await fetch('/api/traces', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: this.adminPass })
+                });
+
+                if (res.ok) {
+                    this.traces = [];
+                    this.localHistory = [];
+                    this.render();
+                    this.updateStats();
+                    this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
+                } else {
+                    alert('clear failed.');
+                }
+            } catch (e) {
+                console.error('Clear failed:', e);
+            }
         }
     }
 
@@ -537,11 +498,10 @@ class TraceApp {
         if (count) count.innerText = this.traces.length;
     }
 
-    saveTraces() { localStorage.setItem('traces_v1', JSON.stringify(this.traces)); }
-    loadTraces() {
-        const saved = localStorage.getItem('traces_v1');
-        return saved ? JSON.parse(saved) : [];
-    }
+    loadTraces() { return null; } // Logic moved to loadWorld
 }
 
-window.onload = () => { new TraceApp(); };
+window.onload = () => {
+    const app = new TraceApp();
+    app.trackVisit();
+};
