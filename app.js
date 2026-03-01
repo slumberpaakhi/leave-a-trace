@@ -20,6 +20,8 @@ class TraceApp {
         // Data
         this.traces = [];
         this.localHistory = [];
+        this.redoHistory = [];
+        this.isPanMode = false;
 
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
         this.syncChannel = new BroadcastChannel('trace_global_sync');
@@ -155,14 +157,42 @@ class TraceApp {
             if (overlay) overlay.style.display = 'none';
         }
 
-        // Add a "change identity" listener to the footer nickname
-        const nickLabel = document.getElementById('current-user-nickname');
-        if (nickLabel) {
-            nickLabel.style.cursor = 'pointer';
-            nickLabel.addEventListener('click', () => {
-                document.getElementById('identity-modal').classList.remove('hidden');
+        // Toolbar Tool Listeners
+        document.getElementById('undo-btn').onclick = () => this.undo();
+        document.getElementById('redo-btn').onclick = () => this.redo();
+
+        const panBtn = document.getElementById('pan-btn');
+        panBtn.onclick = () => {
+            this.isPanMode = !this.isPanMode;
+            panBtn.classList.toggle('active', this.isPanMode);
+            this.setCursor(this.isPanMode ? 'pan' : this.currentColor);
+        };
+
+        const colorTrigger = document.getElementById('color-picker-trigger');
+        const nativePicker = document.getElementById('native-color-picker');
+        colorTrigger.onclick = () => nativePicker.click();
+
+        nativePicker.oninput = (e) => {
+            this.currentColor = e.target.value;
+            const preview = document.getElementById('color-preview');
+            if (preview) preview.style.backgroundColor = this.currentColor;
+            if (!this.isPanMode) this.setCursor(this.currentColor);
+        };
+
+        const sizeSlider = document.getElementById('size-slider');
+        const sizeHint = document.getElementById('current-size-hint');
+        sizeSlider.oninput = (e) => {
+            this.currentSize = parseInt(e.target.value);
+            if (sizeHint) sizeHint.innerText = this.currentSize;
+        };
+
+        // Old color picking (redundant, but keeping for compatibility if any other logic uses it)
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.currentColor = btn.dataset.color;
+                this.setCursor(this.currentColor);
             });
-        }
+        });
 
         // Input listeners
         this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
@@ -237,8 +267,12 @@ class TraceApp {
         this.updateStats();
     }
 
-    setCursor(color) {
-        // Crayon texture using FE Turbulence
+    setCursor(type) {
+        if (type === 'pan') {
+            document.body.style.cursor = 'grab';
+            return;
+        }
+        const color = type;
         const colorPlain = color.replace('#', '');
         const svg = `
         <svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'>
@@ -250,8 +284,6 @@ class TraceApp {
             </defs>
             <g filter='url(%23crayonTexture)'>
                 <path d='M16 2 L4 22 L12 22 L11 30 L21 30 L20 22 L28 22 Z' fill='%23${colorPlain}' stroke='black' stroke-width='1.5' stroke-linejoin='round'/>
-                <!-- Subtle waxy highlights -->
-                <path d='M10 22 L16 8 M14 23 L19 10' stroke='rgba(255,255,255,0.2)' stroke-width='1.5' stroke-linecap='round'/>
             </g>
         </svg>`.replace(/\n/g, '').replace(/\s+/g, ' ');
 
@@ -411,7 +443,16 @@ class TraceApp {
 
     startDrawing(e) {
         if (!this.user || this.isAuthenticated) return;
+
+        if (this.isPanMode) {
+            this.isPanning = true;
+            this.lastPan = { x: e.clientX, y: e.clientY };
+            document.body.style.cursor = 'grabbing';
+            return;
+        }
+
         this.isDrawing = true;
+        this.redoHistory = []; // Reset redo on new stroke
         const pos = this.getCoord(e);
         this.currentStroke = {
             id: Math.random().toString(36).substr(2, 9),
@@ -430,6 +471,15 @@ class TraceApp {
     }
 
     handleMouseMove(e) {
+        if (this.isPanning) {
+            const dx = e.clientX - this.lastPan.x;
+            const dy = e.clientY - this.lastPan.y;
+            this.viewport.scrollLeft -= dx;
+            this.viewport.scrollTop -= dy;
+            this.lastPan = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
         const pos = this.getCoord(e);
 
         // Broadcast local cursor to others (via relay to avoid Pusher Auth overhead)
@@ -469,23 +519,21 @@ class TraceApp {
     }
 
     stopDrawing() {
+        if (this.isPanning) {
+            this.isPanning = false;
+            document.body.style.cursor = 'grab';
+            return;
+        }
         if (!this.isDrawing) return;
         this.isDrawing = false;
         if (this.currentStroke) {
-            // Save local first for zero-latency feel
             const stroke = this.currentStroke;
-
-            // Instant broadcast via relay
             fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event: 'new-stroke',
-                    payload: stroke
-                })
+                body: JSON.stringify({ event: 'new-stroke', payload: stroke })
             }).catch(() => { });
 
-            // Global persistence store
             fetch('/api/traces', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -497,9 +545,25 @@ class TraceApp {
     undo() {
         if (this.localHistory.length === 0) return;
         const lastId = this.localHistory.pop();
+        const stroke = this.traces.find(t => t.id === lastId);
+        if (stroke) this.redoHistory.push(stroke);
         this.traces = this.traces.filter(t => t.id !== lastId);
         this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
-        // No need to call saveTraces(), it's handled by the API
+        this.render();
+        this.updateStats();
+    }
+
+    redo() {
+        if (this.redoHistory.length === 0) return;
+        const stroke = this.redoHistory.pop();
+        this.traces.push(stroke);
+        this.localHistory.push(stroke.id);
+        // Sync redo as a "new stroke" to others
+        fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'new-stroke', payload: stroke })
+        }).catch(() => { });
         this.render();
         this.updateStats();
     }

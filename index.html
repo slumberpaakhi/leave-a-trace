@@ -61,18 +61,43 @@
             </div>
 
             <div id="interface-overlay">
-                <div class="controls-container">
-                    <div class="color-picker">
-                        <button class="color-btn active" data-color="#2d3436"
-                            style="background-color: #2d3436;"></button>
-                        <button class="color-btn" data-color="#d63031" style="background-color: #d63031;"></button>
-                        <button class="color-btn" data-color="#0984e3" style="background-color: #0984e3;"></button>
-                        <button class="color-btn" data-color="#00b894" style="background-color: #00b894;"></button>
-                        <button class="color-btn" data-color="#fdcb6e" style="background-color: #fdcb6e;"></button>
+                <div class="controls-container sketchy-toolbar">
+                    <button id="undo-btn" class="tool-btn" title="undo">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+                        </svg>
+                    </button>
+                    <button id="redo-btn" class="tool-btn" title="redo">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" />
+                        </svg>
+                    </button>
+                    <div class="tool-divider"></div>
+                    <button id="pan-btn" class="tool-btn" title="pan world">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M13 11V5.5c0-.83-.67-1.5-1.5-1.5S10 4.67 10 5.5V11H8V5.5C8 4.67 7.33 4 6.5 4S5 4.67 5 5.5V16c0 3.31 2.69 6 6 6s6-2.69 6-6v-5h-2V5.5c0-.83-.67-1.5-1.5-1.5S12 4.67 12 5.5V11h-1z" />
+                        </svg>
+                    </button>
+                    <div class="tool-divider"></div>
+                    <div class="color-picker-wrapper">
+                        <button id="color-picker-trigger" class="tool-btn no-padding">
+                            <img src="https://api.iconify.design/pixelarticons:color-picker.svg" alt="color palette">
+                        </button>
+                        <input type="color" id="native-color-picker" value="#2d3436" style="display:none">
                     </div>
-                    <div class="divider"></div>
-                    <div class="size-controls">
-                        <input type="range" id="size-slider" min="4" max="24" value="8" step="1">
+                    <div id="color-preview" class="sketchy-preview"></div>
+                    <div class="tool-divider"></div>
+                    <div class="thickness-group">
+                        <span class="thickness-label">stroke thickness</span>
+                        <div class="thickness-slider-wrap">
+                            <span class="value-hint">2</span>
+                            <input type="range" id="size-slider" min="2" max="24" value="8" step="1">
+                            <span class="value-hint" id="current-size-hint">8</span>
+                        </div>
+                        <span class="thickness-footer">pixels</span>
                     </div>
                 </div>
             </div>
