@@ -123,6 +123,10 @@ class TraceApp {
                 this.traces = this.traces.filter(t => t.id !== payload.id);
                 this.render();
                 this.updateStats();
+            } else if (type === 'CLEAR_WORLD') {
+                this.traces = [];
+                this.render();
+                this.updateStats();
             }
         };
 
@@ -332,11 +336,14 @@ class TraceApp {
     // --- Persistence ---
 
     clearAll() {
-        if (confirm('clear your local traces?')) {
-            this.traces = this.traces.filter(t => t.userId !== this.user.id);
+        if (confirm('this will clear all traces from your view. proceed?')) {
+            this.traces = [];
+            this.localHistory = [];
             this.saveTraces();
             this.render();
             this.updateStats();
+            // Broadcast clear if needed (optional for local session-based sync)
+            this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
         }
     }
 
