@@ -481,6 +481,7 @@ footer {
         gap: 0.4rem;
     }
 
+    #remote-cursors-layer,
     #trace-canvas {
         /* Zoomed out for phone */
         transform: scale(0.5);
