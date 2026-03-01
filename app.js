@@ -39,18 +39,31 @@ class TraceApp {
 
         // Global Sync Listeners
         this.world.get('traces').map().on((data, id) => {
-            if (!data) return;
-            // Check if we already have it
-            if (!this.traces.find(t => t.id === data.id)) {
-                // Gun sends data as objects, points might be JSON stringified if they were complex
-                const trace = { ...data };
-                if (typeof trace.points === 'string') {
-                    try { trace.points = JSON.parse(trace.points); } catch (e) { }
+            if (!data) {
+                // Handle deletion/undo from other users
+                const countBefore = this.traces.length;
+                this.traces = this.traces.filter(t => t.id !== id);
+                if (countBefore !== this.traces.length) {
+                    this.render();
+                    this.updateStats();
                 }
-                this.traces.push(trace);
-                this.render();
-                this.updateStats();
+                return;
             }
+
+            const trace = { ...data };
+            if (typeof trace.points === 'string') {
+                try { trace.points = JSON.parse(trace.points); } catch (e) { }
+            }
+
+            const existingIndex = this.traces.findIndex(t => t.id === trace.id);
+            if (existingIndex === -1) {
+                this.traces.push(trace);
+            } else {
+                // Update dots as they arrive (real-time growth)
+                this.traces[existingIndex] = trace;
+            }
+            this.render();
+            this.updateStats();
         });
 
         this.world.get('reset').on((val) => {
@@ -320,6 +333,11 @@ class TraceApp {
             if (dist > 3) {
                 this.currentStroke.points.push(pos);
                 this.drawSegment(lastPoint, pos, this.currentColor, this.currentSize);
+
+                // Sync every 5 points for real-time appearance or at the end
+                if (this.currentStroke.points.length % 5 === 0) {
+                    this.syncTrace();
+                }
             }
         } else {
             if (window.matchMedia('(hover: hover)').matches) {
@@ -331,7 +349,15 @@ class TraceApp {
     stopDrawing() {
         if (!this.isDrawing) return;
         this.isDrawing = false;
+        this.syncTrace();
         this.saveTraces();
+    }
+
+    syncTrace() {
+        if (!this.currentStroke) return;
+        const syncTrace = { ...this.currentStroke };
+        syncTrace.points = JSON.stringify(syncTrace.points);
+        this.world.get('traces').get(syncTrace.id).put(syncTrace);
     }
 
     undo() {
