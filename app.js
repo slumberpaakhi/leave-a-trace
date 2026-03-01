@@ -18,8 +18,8 @@ class TraceApp {
         this.user = this.loadIdentity() || null;
 
         // Data
-        this.traces = this.loadTraces() || [];
-        this.localHistory = []; // For Undo (Ctrl+Z)
+        this.traces = [];
+        this.localHistory = [];
 
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
         this.syncChannel = new BroadcastChannel('trace_global_sync');
@@ -79,15 +79,22 @@ class TraceApp {
                 }
             })
             .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED' && this.user) {
-                    await this.channel.track({
-                        id: this.user.id,
-                        nickname: this.user.nickname,
-                        avatar: this.user.avatar,
-                        online_at: new Date().toISOString(),
-                    });
+                if (status === 'SUBSCRIBED') {
+                    console.log('Realtime SUBSCRIBED');
+                    this.trackPresence();
                 }
             });
+    }
+
+    async trackPresence() {
+        if (!this.channel || !this.user) return;
+        console.log('Tracking presence for:', this.user.nickname);
+        await this.channel.track({
+            id: this.user.id,
+            nickname: this.user.nickname,
+            avatar: this.user.avatar,
+            online_at: new Date().toISOString(),
+        });
     }
 
     updateRemoteCursor(data) {
@@ -249,10 +256,12 @@ class TraceApp {
         document.body.style.cursor = `url("${url}") 16 2, crosshair`;
     }
 
-    setCookie(name, value, days = 365) {
-        const expires = new Date();
-        expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
-        document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+    setCookie(name, value) {
+        const d = new Date();
+        d.setTime(d.getTime() + (365 * 24 * 60 * 60 * 1000));
+        const expires = "expires=" + d.toUTCString();
+        // Ensure path / so it's global for the site
+        document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; ${expires}; path=/; SameSite=Lax`;
     }
 
     getCookie(name) {
@@ -265,6 +274,7 @@ class TraceApp {
                 try {
                     return JSON.parse(decodeURIComponent(c.substring(nameEQ.length, c.length)));
                 } catch (e) {
+                    console.error("Error parsing cookie:", e);
                     return null;
                 }
             }
@@ -298,18 +308,38 @@ class TraceApp {
         };
 
         this.setCookie('trace_user_cookie', this.user);
-        localStorage.setItem('trace_user', JSON.stringify(this.user));
+        localStorage.setItem('trace_user_v2', JSON.stringify(this.user)); // New key to avoid conflicts
+        console.log('User identity saved:', this.user);
 
         document.getElementById('identity-modal').classList.add('hidden');
         this.updateIdentityDisplay();
+        this.trackPresence(); // IMMEDIATELY tell others you are online
     }
 
     loadIdentity() {
-        const cookieUser = this.getCookie('trace_user_cookie');
-        if (cookieUser) return cookieUser;
+        try {
+            // Prioritize localStorage v2 for fresh start and consistency
+            const saved = localStorage.getItem('trace_user_v2');
+            if (saved) {
+                console.log('Loaded identity from localStorage (v2)');
+                return JSON.parse(saved);
+            }
 
-        const saved = localStorage.getItem('trace_user');
-        return saved ? JSON.parse(saved) : null;
+            // Fallback to cookie if v2 not found (e.g., old user)
+            const cookieUser = this.getCookie('trace_user_cookie');
+            if (cookieUser && cookieUser.id) {
+                console.log('Loaded identity from cookie');
+                // Migrate cookie user to localStorage v2 for future consistency
+                localStorage.setItem('trace_user_v2', JSON.stringify(cookieUser));
+                return cookieUser;
+            }
+
+            console.log('No identity found, starting fresh.');
+            return null;
+        } catch (e) {
+            console.error('Error loading identity:', e);
+            return null;
+        }
     }
 
     updateIdentityDisplay() {
@@ -425,7 +455,7 @@ class TraceApp {
         const lastId = this.localHistory.pop();
         this.traces = this.traces.filter(t => t.id !== lastId);
         this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
-        this.saveTraces();
+        // No need to call saveTraces(), it's handled by the API
         this.render();
         this.updateStats();
     }
@@ -517,6 +547,7 @@ class TraceApp {
             if (this.isAuthenticated) this.showAdminPanel();
             this.render();
             this.updateStats();
+            console.log('World loaded successfully.');
         } catch (e) {
             console.error('World load failed:', e);
         }
@@ -542,8 +573,10 @@ class TraceApp {
                     this.render();
                     this.updateStats();
                     this.syncChannel.postMessage({ type: 'CLEAR_WORLD' });
+                    console.log('World cleared successfully.');
                 } else {
                     alert('clear failed.');
+                    console.error('Clear failed with status:', res.status);
                 }
             } catch (e) {
                 console.error('Clear failed:', e);
@@ -591,7 +624,7 @@ class TraceApp {
     loadTraces() { return null; } // Logic moved to loadWorld
 }
 
-window.onload = () => {
+window.onload = async () => {
     const app = new TraceApp();
-    app.trackVisit();
+    await app.trackVisit();
 };
