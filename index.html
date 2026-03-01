@@ -18,7 +18,19 @@
                 style="margin: 0 auto 1.5rem auto; width: 64px; height: 64px;"></div>
             <p>how will the world remember your trace?</p>
             <input type="text" id="nickname-input" placeholder="enter nickname..." maxlength="15">
+            <input type="password" id="user-password-input" placeholder="enter password (optional)...">
             <button id="save-identity">enter</button>
+        </div>
+    </div>
+
+    <!-- admin login modal -->
+    <div id="admin-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>administrator access.</h2>
+            <p>restricted world management</p>
+            <input type="password" id="admin-password-input" placeholder="enter passphrase...">
+            <button id="admin-login-btn">identify admin</button>
+            <p id="admin-login-error" style="color: #d63031; font-size: 0.7rem; margin-top: 1rem; opacity: 0;"></p>
         </div>
     </div>
 

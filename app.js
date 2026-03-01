@@ -29,7 +29,8 @@ class TraceApp {
         document.body.setAttribute('data-theme', this.theme);
 
         // Admin State
-        this.isAdmin = window.location.search.includes('admin=true');
+        this.isAdmin = window.location.search.includes('admin=true') ||
+            window.location.pathname.startsWith('/admin');
         this.isAuthenticated = false;
         this.adminPass = '';
         this.analytics = { visits: 0, clears: 0 };
@@ -107,26 +108,35 @@ class TraceApp {
             this.updateIdentityDisplay();
         }
 
-        // Admin Auth Flow
+        // Admin Flow (UI Modal)
         if (this.isAdmin) {
-            setTimeout(() => {
-                this.adminPass = prompt('enter administrator password:');
-                if (this.adminPass === '1234') {
+            const adminModal = document.getElementById('admin-modal');
+            adminModal.classList.remove('hidden');
+
+            document.getElementById('admin-login-btn').onclick = () => {
+                const pass = document.getElementById('admin-password-input').value;
+                if (pass === '1234') {
                     this.isAuthenticated = true;
+                    this.adminPass = pass;
+                    adminModal.classList.add('hidden');
                     document.body.classList.add('is-admin');
                     this.showAdminPanel();
                 } else {
-                    alert('access denied.');
-                    window.location.href = window.location.pathname;
+                    const error = document.getElementById('admin-login-error');
+                    error.innerText = 'incorrect passphrase.';
+                    error.style.opacity = '1';
                 }
-            }, 100);
+            };
         }
 
         document.getElementById('save-identity').addEventListener('click', () => this.saveIdentity());
-
         const nicknameInput = document.getElementById('nickname-input');
-        nicknameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.saveIdentity();
+        const userPassInput = document.getElementById('user-password-input');
+
+        [nicknameInput, userPassInput].forEach(inp => {
+            inp.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') this.saveIdentity();
+            });
         });
 
         nicknameInput.addEventListener('input', (e) => {
@@ -284,23 +294,26 @@ class TraceApp {
     }
 
     saveIdentity() {
-        const input = document.getElementById('nickname-input');
-        const nick = input.value.trim() || 'anonymous';
+        const nickInput = document.getElementById('nickname-input');
+        const passInput = document.getElementById('user-password-input');
+        const nick = nickInput.value.trim() || 'anonymous';
+        const pass = passInput.value.trim();
+
         const seed = nick + (this.sessionSeed || Math.random());
 
         this.user = {
             id: Math.random().toString(36).substr(2, 9),
             nickname: nick,
+            password: pass,
             avatar: this.getAvatarUrl(seed)
         };
 
         this.setCookie('trace_user_cookie', this.user);
-        localStorage.setItem('trace_user_v2', JSON.stringify(this.user)); // New key to avoid conflicts
-        console.log('User identity saved:', this.user);
+        localStorage.setItem('trace_user_v2', JSON.stringify(this.user));
 
         document.getElementById('identity-modal').classList.add('hidden');
         this.updateIdentityDisplay();
-        this.trackPresence(); // IMMEDIATELY tell others you are online
+        this.trackPresence();
     }
 
     loadIdentity() {
