@@ -55,6 +55,13 @@ class TraceApp {
         this.remoteCursors = new Map();
         this.presenceContainer = document.getElementById('remote-cursors-layer');
 
+        this.channel.bind('undo-stroke', (data) => {
+            console.log('Syncing undo globally...');
+            this.traces = this.traces.filter(t => t.id !== data.id);
+            this.render();
+            this.updateStats();
+        });
+
         this.channel.bind('cursor-move', (data) => {
             this.updateRemoteCursor(data);
         });
@@ -173,6 +180,8 @@ class TraceApp {
 
         // Toolbar Tool Listeners
         const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) undoBtn.onclick = () => this.undo();
+
         const centerBtn = document.getElementById('center-btn');
         if (centerBtn) {
             centerBtn.onclick = () => {
@@ -528,11 +537,28 @@ class TraceApp {
         }
     }
 
-    undo() {
+    async undo() {
         if (this.localHistory.length === 0) return;
         const lastId = this.localHistory.pop();
         this.traces = this.traces.filter(t => t.id !== lastId);
+
+        // Broadcast locally
         this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
+
+        // Broadcast globally via Pusher
+        fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'undo-stroke', payload: { id: lastId } })
+        }).catch(() => { });
+
+        // Persistent removal
+        fetch('/api/traces', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: lastId })
+        }).catch(e => console.error('Cloud undo failed:', e));
+
         this.render();
         this.updateStats();
     }
@@ -541,6 +567,9 @@ class TraceApp {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         const now = Date.now();
         this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
+
+        // Make the background move to create the infinite canvas sensation
+        document.body.style.backgroundPosition = `${-this.panOffset.x}px ${-this.panOffset.y}px`;
 
         this.ctx.save();
         this.ctx.translate(-this.panOffset.x, -this.panOffset.y);

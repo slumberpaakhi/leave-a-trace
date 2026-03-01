@@ -39,7 +39,7 @@ body {
     background-image: url("https://images.unsplash.com/photo-1586075010633-247fe1bd693b?auto=format&fit=crop&q=80&w=2000");
     background-repeat: repeat;
     background-size: 1000px;
-    background-attachment: fixed;
+    background-position: 0 0;
 }
 
 [data-theme="dark"] body {
@@ -328,13 +328,14 @@ main {
 
 #trace-canvas {
     display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
     background: transparent;
 }
 
-/* Localhost Infinite Canvas Overrides */
-body:has(#trace-canvas[width][height]) #trace-canvas {
-    /* If the width/height are set by JS, let them govern */
-}
+/* Localhost Infinite Canvas Overrides: Handled by JS resize and panOffset */
+
 
 /* Ensure viewport doesn't clip when panning internally */
 #canvas-viewport {

@@ -28,21 +28,33 @@ export async function onRequestPost(context) {
 
 export async function onRequestDelete(context) {
     const { request, env } = context;
-    const { password } = await request.json();
+    const { password, id } = await request.json();
 
-    if (password !== "1234") {
-        return new Response("Unauthorized", { status: 401 });
+    // 1. Global Clear (requires password)
+    if (password) {
+        if (password !== "1234") {
+            return new Response("Unauthorized", { status: 401 });
+        }
+        await env.TRACES_KV.put("world_traces", JSON.stringify([]));
+        let analytics = await env.TRACES_KV.get("world_analytics", { type: "json" }) || { visits: 0, clears: 0 };
+        analytics.clears++;
+        await env.TRACES_KV.put("world_analytics", JSON.stringify(analytics));
+
+        return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" },
+        });
     }
 
-    // Clear world
-    await env.TRACES_KV.put("world_traces", JSON.stringify([]));
+    // 2. Individual Undo (requires trace ID)
+    if (id) {
+        let traces = await env.TRACES_KV.get("world_traces", { type: "json" }) || [];
+        const filtered = traces.filter(t => t.id !== id);
+        await env.TRACES_KV.put("world_traces", JSON.stringify(filtered));
 
-    // Increment clear analytics
-    let analytics = await env.TRACES_KV.get("world_analytics", { type: "json" }) || { visits: 0, clears: 0 };
-    analytics.clears++;
-    await env.TRACES_KV.put("world_analytics", JSON.stringify(analytics));
+        return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" },
+        });
+    }
 
-    return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-    });
+    return new Response("Bad Request", { status: 400 });
 }
