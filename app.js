@@ -14,7 +14,8 @@ class TraceApp {
         this.fadeDuration = 24 * 60 * 60 * 1000; // 24 hours in ms
 
         // Identity
-        this.user = this.loadIdentity() || null;
+        this.user = this.loadIdentity();
+        this.sessionSeed = Math.random().toString(36).substr(2, 9);
 
         // Data
         this.traces = [];
@@ -95,11 +96,14 @@ class TraceApp {
         window.addEventListener('resize', () => this.resize());
 
         // Identity Modal
+        const modal = document.getElementById('identity-modal');
         if (!this.user) {
             this.sessionSeed = Math.random().toString(36).substr(2, 9);
-            document.getElementById('identity-modal').classList.remove('hidden');
+            modal.classList.remove('hidden');
             this.updateSetupPreview('');
         } else {
+            console.info('Auto-login: Skipping modal.');
+            modal.classList.add('hidden'); // CRITICAL FIX: Ensure it's hidden if user exists
             this.updateIdentityDisplay();
         }
 
@@ -133,6 +137,15 @@ class TraceApp {
         if (this.isAdmin) {
             const overlay = document.getElementById('interface-overlay');
             if (overlay) overlay.style.display = 'none';
+        }
+
+        // Add a "change identity" listener to the footer nickname
+        const nickLabel = document.getElementById('current-user-nickname');
+        if (nickLabel) {
+            nickLabel.style.cursor = 'pointer';
+            nickLabel.addEventListener('click', () => {
+                document.getElementById('identity-modal').classList.remove('hidden');
+            });
         }
 
         // Input listeners
@@ -418,21 +431,24 @@ class TraceApp {
         if (!this.isDrawing) return;
         this.isDrawing = false;
         if (this.currentStroke) {
-            // Instant broadcast via relay for live synchronization
+            // Save local first for zero-latency feel
+            const stroke = this.currentStroke;
+
+            // Instant broadcast via relay
             fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     event: 'new-stroke',
-                    payload: this.currentStroke
+                    payload: stroke
                 })
             }).catch(() => { });
 
-            // Global persistence store (Cloudflare API)
+            // Global persistence store
             fetch('/api/traces', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(this.currentStroke)
+                body: JSON.stringify(stroke)
             }).catch(e => console.error('Cloud save failed:', e));
         }
     }
@@ -524,17 +540,18 @@ class TraceApp {
             const res = await fetch('/api/traces');
             const data = await res.json();
 
-            // Merge global traces (prefer local for real-time smoothness)
-            const localIds = new Set(this.traces.map(t => t.id));
-            const newGlobalTraces = data.traces.filter(t => !localIds.has(t.id));
-            this.traces = [...this.traces, ...newGlobalTraces];
+            // Merge global traces (deduplicate by ID)
+            const existingIds = new Set(this.traces.map(t => t.id));
+            const newGlobalTraces = data.traces.filter(t => !existingIds.has(t.id));
 
-            this.analytics = data.analytics;
+            if (newGlobalTraces.length > 0) {
+                this.traces = [...this.traces, ...newGlobalTraces];
+                this.render();
+            }
 
-            if (this.isAuthenticated) this.showAdminPanel();
-            this.render();
+            this.analytics = data.analytics || { visits: 0, clears: 0 };
             this.updateStats();
-            console.log('World loaded successfully.');
+            console.log(`World Sync: ${this.traces.length} traces active.`);
         } catch (e) {
             console.error('World load failed:', e);
         }
@@ -604,11 +621,12 @@ class TraceApp {
     }
 
     updateStats() {
+        const count = document.getElementById('trace-count');
+        if (count) count.innerText = this.traces.length;
+
+        // If admin, also update the dashboard numbers
         if (this.isAuthenticated) {
-            this.showAdminPanel(); // Refresh full dashboard
-        } else {
-            const count = document.getElementById('trace-count');
-            if (count) count.innerText = this.traces.length;
+            this.showAdminPanel();
         }
     }
 
