@@ -1,3 +1,5 @@
+import { getStroke } from 'https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.0/+esm';
+
 const PUSHER_KEY = '9916c0c7cc39de16616c';
 const PUSHER_CLUSTER = 'ap2';
 
@@ -531,7 +533,7 @@ class TraceApp {
             color: this.currentColor,
             size: this.currentSize,
             timestamp: Date.now(),
-            points: [pos]
+            points: [[pos.x, pos.y, 0.5]]
         };
         this.traces.push(this.currentStroke);
         this.localHistory.push(this.currentStroke.id);
@@ -575,10 +577,13 @@ class TraceApp {
 
         if (this.isDrawing) {
             const lastPoint = this.currentStroke.points[this.currentStroke.points.length - 1];
-            const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
+            const dx = pos.x - lastPoint[0];
+            const dy = pos.y - lastPoint[1];
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
             if (dist > 3) {
-                this.currentStroke.points.push(pos);
-                this.drawSegment(lastPoint, pos, this.currentColor, this.currentSize);
+                this.currentStroke.points.push([pos.x, pos.y, 0.5]);
+                this.render(); // Redraw with the new point
             }
         } else {
             if (window.matchMedia('(hover: hover)').matches) {
@@ -616,17 +621,14 @@ class TraceApp {
         const lastId = this.localHistory.pop();
         this.traces = this.traces.filter(t => t.id !== lastId);
 
-        // Broadcast locally
         this.syncChannel.postMessage({ type: 'UNDO', payload: { id: lastId } });
 
-        // Broadcast globally via Pusher
         fetch('/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ event: 'undo-stroke', payload: { id: lastId } })
         }).catch(() => { });
 
-        // Persistent removal
         fetch('/api/traces', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -642,7 +644,6 @@ class TraceApp {
         const now = Date.now();
         this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
 
-        // Make the background move and SCALE to create the infinite canvas sensation
         const bgX = -this.panOffset.x * this.zoomScale;
         const bgY = -this.panOffset.y * this.zoomScale;
         const bgSize = 1000 * this.zoomScale;
@@ -656,53 +657,52 @@ class TraceApp {
         this.traces.forEach(stroke => {
             const elapsed = now - stroke.timestamp;
             const fadeAlpha = Math.max(0, 1 - (elapsed / this.fadeDuration));
-            this.ctx.globalAlpha = fadeAlpha;
-            this.drawFullStroke(stroke);
+            this.drawFullStroke(stroke, fadeAlpha);
         });
 
         this.ctx.restore();
-        this.ctx.globalAlpha = 1.0;
     }
 
-    drawFullStroke(stroke) {
-        for (let i = 1; i < stroke.points.length; i++) {
-            this.drawSegment(stroke.points[i - 1], stroke.points[i], stroke.color, stroke.size);
-        }
-    }
+    drawFullStroke(stroke, alpha = 1) {
+        if (!stroke.points || stroke.points.length < 1) return;
 
-    drawSegment(p1, p2, color, size) {
-        // Project world coordinates back to screen for live drawing feedback
-        // Including the current zoom level
-        const s1 = {
-            x: (p1.x - this.panOffset.x) * this.zoomScale,
-            y: (p1.y - this.panOffset.y) * this.zoomScale
-        };
-        const s2 = {
-            x: (p2.x - this.panOffset.x) * this.zoomScale,
-            y: (p2.y - this.panOffset.y) * this.zoomScale
-        };
+        const outlinePoints = getStroke(stroke.points, {
+            size: stroke.size,
+            thinning: 0.5,
+            smoothing: 0.5,
+            simulatePressure: true,
+            last: true
+        });
+
+        if (outlinePoints.length === 0) return;
 
         this.ctx.save();
-        // Since the main canvas is scaled during render, we don't scale here
-        // segment drawing happens in absolute pixels for the current viewport state
-        this.ctx.fillStyle = color;
-        const dx = s2.x - s1.x;
-        const dy = s2.y - s1.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx);
-        const scaledSize = size * this.zoomScale;
+        this.ctx.beginPath();
+        this.ctx.fillStyle = stroke.color;
+        this.ctx.globalAlpha = alpha;
 
-        for (let d = 0; d < dist; d += 2) {
-            const px = s1.x + Math.cos(angle) * d;
-            const py = s1.y + Math.sin(angle) * d;
-            for (let j = 0; j < 4; j++) {
-                const rx = (Math.random() - 0.5) * scaledSize;
-                const ry = (Math.random() - 0.5) * scaledSize;
-                this.ctx.beginPath();
-                this.ctx.arc(px + rx, py + ry, (Math.random() * 1.5 + 0.5) * this.zoomScale, 0, Math.PI * 2);
-                this.ctx.fill();
-            }
-        }
+        const pathData = this.getSvgPathFromStroke(outlinePoints);
+        const path = new Path2D(pathData);
+        this.ctx.fill(path);
+        this.ctx.restore();
+    }
+
+    getSvgPathFromStroke(stroke) {
+        if (!stroke.length) return "";
+        const d = stroke.reduce(
+            (acc, [x0, y0], i, arr) => {
+                if (i === 0) {
+                    acc.push("M", x0, y0, "Q");
+                } else {
+                    const [x1, y1] = arr[i - 1];
+                    acc.push((x0 + x1) / 2, (y0 + y1) / 2, x0, y0);
+                }
+                return acc;
+            },
+            ["M", stroke[0][0], stroke[0][1], "Q"]
+        );
+        d.push("Z");
+        return d.join(" ");
     }
 
     checkHover(e) {
@@ -714,7 +714,7 @@ class TraceApp {
             const stroke = this.traces[i];
             for (let j = 0; j < stroke.points.length; j += 10) {
                 const p = stroke.points[j];
-                if (Math.hypot(pos.x - p.x, pos.y - p.y) < 15) {
+                if (Math.hypot(pos.x - p[0], pos.y - p[1]) < 15) {
                     found = stroke;
                     break;
                 }
@@ -772,7 +772,6 @@ class TraceApp {
                     this.render();
                     this.updateStats();
 
-                    // Global sync via Pusher
                     fetch('/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
