@@ -21,6 +21,10 @@ class TraceApp {
         this.traces = [];
         this.localHistory = [];
         this.isPanMode = false;
+        this.zoomScale = 1.0;
+        this.minZoom = 0.2;
+        this.maxZoom = 5.0;
+        this.lastPinchDist = 0;
 
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
         this.syncChannel = new BroadcastChannel('trace_global_sync');
@@ -239,16 +243,45 @@ class TraceApp {
 
         // Touch support
         this.canvas.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            this.startDrawing({ clientX: touch.clientX, clientY: touch.clientY });
+            if (e.touches.length === 2) {
+                this.lastPinchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            } else {
+                const touch = e.touches[0];
+                this.startDrawing({ clientX: touch.clientX, clientY: touch.clientY });
+            }
         });
         this.canvas.addEventListener('touchmove', (e) => {
-            if (e.touches.length > 1) return;
             e.preventDefault();
-            const touch = e.touches[0];
-            this.handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+            if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                this.handleZoom(dist / this.lastPinchDist, midX, midY);
+                this.lastPinchDist = dist;
+            } else {
+                const touch = e.touches[0];
+                this.handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+            }
         }, { passive: false });
-        this.canvas.addEventListener('touchend', () => this.stopDrawing());
+        this.canvas.addEventListener('touchend', () => {
+            this.stopDrawing();
+            this.lastPinchDist = 0;
+        });
+
+        // Wheel Zoom
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                this.handleZoom(delta, e.clientX, e.clientY);
+            }
+        }, { passive: false });
 
         // Keyboard (Undo)
         window.addEventListener('keydown', (e) => {
@@ -441,7 +474,7 @@ class TraceApp {
     }
 
     centerView() {
-        // Bring the world origin (0,0) exactly to the middle of the screen
+        this.zoomScale = 1.0;
         this.panOffset = {
             x: -window.innerWidth / 2,
             y: -window.innerHeight / 2
@@ -449,12 +482,28 @@ class TraceApp {
         this.render();
     }
 
+    handleZoom(factor, centerX, centerY) {
+        const oldScale = this.zoomScale;
+        const newScale = Math.min(this.maxZoom, Math.max(this.minZoom, oldScale * factor));
+
+        if (newScale === oldScale) return;
+
+        // Zoom relative to point (centerX, centerY)
+        const worldX = (centerX / oldScale) + this.panOffset.x;
+        const worldY = (centerY / oldScale) + this.panOffset.y;
+
+        this.zoomScale = newScale;
+        this.panOffset.x = worldX - (centerX / newScale);
+        this.panOffset.y = worldY - (centerY / newScale);
+
+        this.render();
+    }
+
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
-        // Dynamic mapping for high-precision touch alignment
-        // We use clientX/Y which is relative to the viewport
-        const x = (e.clientX - rect.left);
-        const y = (e.clientY - rect.top);
+        // Account for current zoom level and pan offset
+        const x = (e.clientX - rect.left) / this.zoomScale;
+        const y = (e.clientY - rect.top) / this.zoomScale;
 
         return {
             x: x + this.panOffset.x,
@@ -492,8 +541,8 @@ class TraceApp {
 
     handleMouseMove(e) {
         if (this.isPanning) {
-            const dx = (e.clientX - this.lastPan.x);
-            const dy = (e.clientY - this.lastPan.y);
+            const dx = (e.clientX - this.lastPan.x) / this.zoomScale;
+            const dy = (e.clientY - this.lastPan.y) / this.zoomScale;
             this.panOffset.x -= dx;
             this.panOffset.y -= dy;
             this.lastPan = { x: e.clientX, y: e.clientY };
@@ -593,10 +642,15 @@ class TraceApp {
         const now = Date.now();
         this.traces = this.traces.filter(t => (now - t.timestamp) < this.fadeDuration);
 
-        // Make the background move to create the infinite canvas sensation
-        document.body.style.backgroundPosition = `${-this.panOffset.x}px ${-this.panOffset.y}px`;
+        // Make the background move and SCALE to create the infinite canvas sensation
+        const bgX = -this.panOffset.x * this.zoomScale;
+        const bgY = -this.panOffset.y * this.zoomScale;
+        const bgSize = 1000 * this.zoomScale;
+        document.body.style.backgroundPosition = `${bgX}px ${bgY}px`;
+        document.body.style.backgroundSize = `${bgSize}px`;
 
         this.ctx.save();
+        this.ctx.scale(this.zoomScale, this.zoomScale);
         this.ctx.translate(-this.panOffset.x, -this.panOffset.y);
 
         this.traces.forEach(stroke => {
@@ -618,23 +672,34 @@ class TraceApp {
 
     drawSegment(p1, p2, color, size) {
         // Project world coordinates back to screen for live drawing feedback
-        const s1 = { x: p1.x - this.panOffset.x, y: p1.y - this.panOffset.y };
-        const s2 = { x: p2.x - this.panOffset.x, y: p2.y - this.panOffset.y };
+        // Including the current zoom level
+        const s1 = {
+            x: (p1.x - this.panOffset.x) * this.zoomScale,
+            y: (p1.y - this.panOffset.y) * this.zoomScale
+        };
+        const s2 = {
+            x: (p2.x - this.panOffset.x) * this.zoomScale,
+            y: (p2.y - this.panOffset.y) * this.zoomScale
+        };
 
+        this.ctx.save();
+        // Since the main canvas is scaled during render, we don't scale here
+        // segment drawing happens in absolute pixels for the current viewport state
         this.ctx.fillStyle = color;
         const dx = s2.x - s1.x;
         const dy = s2.y - s1.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx);
+        const scaledSize = size * this.zoomScale;
 
         for (let d = 0; d < dist; d += 2) {
             const px = s1.x + Math.cos(angle) * d;
             const py = s1.y + Math.sin(angle) * d;
             for (let j = 0; j < 4; j++) {
-                const rx = (Math.random() - 0.5) * size;
-                const ry = (Math.random() - 0.5) * size;
+                const rx = (Math.random() - 0.5) * scaledSize;
+                const ry = (Math.random() - 0.5) * scaledSize;
                 this.ctx.beginPath();
-                this.ctx.arc(px + rx, py + ry, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+                this.ctx.arc(px + rx, py + ry, (Math.random() * 1.5 + 0.5) * this.zoomScale, 0, Math.PI * 2);
                 this.ctx.fill();
             }
         }
