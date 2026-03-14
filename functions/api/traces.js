@@ -32,7 +32,8 @@ export async function onRequestDelete(context) {
 
     // 1. Global Clear (requires password)
     if (password) {
-        if (password !== "1234") {
+        const adminPass = env.ADMIN_PASSWORD || "1234";
+        if (password !== adminPass) {
             return new Response("Unauthorized", { status: 401 });
         }
         await env.TRACES_KV.put("world_traces", JSON.stringify([]));

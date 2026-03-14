@@ -251,18 +251,17 @@ header {
 }
 
 .philosophical-header h1 {
-    font-size: 1.8rem;
-    font-weight: 300;
+    font-size: 1.3rem;
+    /* Perfectly proportioned for mobile */
+    font-weight: 400;
     letter-spacing: -0.01em;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.2rem;
 }
 
 .philosophical-header p {
-    font-size: 0.95rem;
-    color: var(--text-secondary);
-    max-width: 400px;
+    font-size: 0.8rem;
     line-height: 1.4;
-    margin-bottom: 0.75rem;
+    opacity: 0.8;
 }
 
 .reset-link {
@@ -579,14 +578,15 @@ footer {
     }
 
     .philosophical-header h1 {
-        font-size: 1.1rem;
+        font-size: 1.3rem;
         font-weight: 400;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.01em;
+        margin-bottom: 0.2rem;
     }
 
     .philosophical-header p {
-        display: none;
-        /* Hide subtitle to save vertical space */
+        font-size: 0.85rem;
+        line-height: 1.4;
     }
 
     .top-right-controls {
@@ -599,12 +599,14 @@ footer {
     #interface-overlay {
         position: fixed;
         bottom: 1.5rem;
-        left: 50%;
-        transform: translateX(-50%);
-        /* Center the toolbar */
+        left: 1rem;
+        transform: none;
         z-index: 100;
-        width: 90%;
-        max-width: 400px;
+    }
+
+    .controls-container {
+        padding: 0.4rem;
+        gap: 0.4rem;
     }
 
     .sketchy-toolbar {
@@ -676,11 +678,12 @@ footer {
 
     #remote-cursors-layer,
     #trace-canvas {
-        /* Zoomed out for phone - keeping current logic but ensuring it fills well */
-        transform: scale(0.5);
-        transform-origin: top left;
-        width: 3000px;
-        height: 3000px;
+        /* Full-screen canvas for infinite world logic */
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
     }
 
     #canvas-viewport {
@@ -706,9 +709,9 @@ footer {
     /* Show user info slightly differently if we want to keep it */
     body:not(.is-admin) footer {
         display: flex;
-        bottom: 5.5rem;
-        /* Above toolbar */
-        right: 1.5rem;
+        bottom: 1.5rem;
+        /* Corner alignment */
+        right: 1rem;
     }
 
     .user-info {

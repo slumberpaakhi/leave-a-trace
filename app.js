@@ -25,8 +25,8 @@ class TraceApp {
         // Real-time synchronization (BroadcastChannel for tab-to-tab)
         this.syncChannel = new BroadcastChannel('trace_global_sync');
 
-        // Theme (Default to Dark)
-        this.theme = localStorage.getItem('theme_v1') || 'dark';
+        // Theme (Default to Light)
+        this.theme = localStorage.getItem('theme_v1') || 'light';
         document.body.setAttribute('data-theme', this.theme);
 
         // Admin State
@@ -36,9 +36,10 @@ class TraceApp {
         this.adminPass = '';
         this.analytics = { visits: 0, clears: 0 };
 
-        this.panOffset = { x: 0, y: 0 };
-        this.isPanning = false;
-
+        this.panOffset = {
+            x: -window.innerWidth / 2,
+            y: -window.innerHeight / 2
+        };
         this.init();
         this.loadWorld();
         this.setCursor(this.currentColor);
@@ -137,17 +138,28 @@ class TraceApp {
             const adminModal = document.getElementById('admin-modal');
             adminModal.classList.remove('hidden');
 
-            document.getElementById('admin-login-btn').onclick = () => {
+            document.getElementById('admin-login-btn').onclick = async () => {
                 const pass = document.getElementById('admin-password-input').value;
-                if (pass === '1234') {
-                    this.isAuthenticated = true;
-                    this.adminPass = pass;
-                    adminModal.classList.add('hidden');
-                    document.body.classList.add('is-admin');
-                    this.showAdminPanel();
-                } else {
+                try {
+                    const res = await fetch('/api/admin-auth', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: pass })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        this.isAuthenticated = true;
+                        this.adminPass = pass;
+                        adminModal.classList.add('hidden');
+                        document.body.classList.add('is-admin');
+                        this.showAdminPanel();
+                        console.info('Admin: Authenticated.');
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (e) {
                     const error = document.getElementById('admin-login-error');
-                    error.innerText = 'incorrect passphrase.';
+                    error.innerText = e.message || 'incorrect passphrase.';
                     error.style.opacity = '1';
                     setTimeout(() => error.style.opacity = '0', 3000);
                 }
@@ -185,7 +197,10 @@ class TraceApp {
         const centerBtn = document.getElementById('center-btn');
         if (centerBtn) {
             centerBtn.onclick = () => {
-                this.panOffset = { x: 0, y: 0 };
+                this.panOffset = {
+                    x: -window.innerWidth / 2,
+                    y: -window.innerHeight / 2
+                };
                 this.render();
             };
         }
@@ -431,9 +446,12 @@ class TraceApp {
 
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const scale = window.innerWidth < 768 ? 0.5 : 1.0;
-        const x = (e.clientX - rect.left) / scale;
-        const y = (e.clientY - rect.top) / scale;
+        // Robust coordinate mapping: Calculate actual scale between CSS pixels and Canvas resolution
+        const scaleX = rect.width / this.canvas.width;
+        const scaleY = rect.height / this.canvas.height;
+
+        const x = (e.clientX - rect.left) / scaleX;
+        const y = (e.clientY - rect.top) / scaleY;
         return { x: x + this.panOffset.x, y: y + this.panOffset.y };
     }
 
