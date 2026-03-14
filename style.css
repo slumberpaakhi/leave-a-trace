@@ -48,10 +48,22 @@ body {
 }
 
 /* Real-time Presence Cursors */
+#remote-cursors-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 5;
+    /* Behind canvas to prevent drawing block, but cursors inside have their own z-index */
+    overflow: hidden;
+}
+
 .remote-cursor {
     position: absolute;
     pointer-events: none;
-    z-index: 999;
+    z-index: 10;
     transition: transform 0.1s linear;
     will-change: transform;
 }
@@ -327,12 +339,15 @@ main {
 
 #trace-canvas {
     display: block;
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
+    z-index: 10;
+    /* Above remote cursors layer, below UI */
     background: transparent;
     touch-action: none;
-    /* Critical: Stops mobile browser from hijacking drawing movements */
+    width: 100vw;
+    height: 100vh;
 }
 
 /* Localhost Infinite Canvas Overrides: Handled by JS resize and panOffset */
