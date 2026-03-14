@@ -680,12 +680,13 @@ footer {
 
     #remote-cursors-layer,
     #trace-canvas {
-        /* Full-screen canvas for infinite world logic */
-        width: 100%;
-        height: 100%;
-        position: absolute;
+        /* Strictly match viewport to ensure no drawing offset */
+        width: 100vw;
+        height: 100vh;
+        position: fixed;
         top: 0;
         left: 0;
+        touch-action: none;
     }
 
     #canvas-viewport {

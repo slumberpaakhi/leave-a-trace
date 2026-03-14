@@ -36,10 +36,6 @@ class TraceApp {
         this.adminPass = '';
         this.analytics = { visits: 0, clears: 0 };
 
-        this.panOffset = {
-            x: -window.innerWidth / 2,
-            y: -window.innerHeight / 2
-        };
         this.init();
         this.loadWorld();
         this.setCursor(this.currentColor);
@@ -113,7 +109,10 @@ class TraceApp {
 
     init() {
         this.resize();
-        window.addEventListener('resize', () => this.resize());
+        this.centerView(); // Always start at the center of the world
+        window.addEventListener('resize', () => {
+            this.resize();
+        });
 
         // Identity Modal
         const modal = document.getElementById('identity-modal');
@@ -197,11 +196,7 @@ class TraceApp {
         const centerBtn = document.getElementById('center-btn');
         if (centerBtn) {
             centerBtn.onclick = () => {
-                this.panOffset = {
-                    x: -window.innerWidth / 2,
-                    y: -window.innerHeight / 2
-                };
-                this.render();
+                this.centerView();
             };
         }
 
@@ -445,12 +440,26 @@ class TraceApp {
         this.render();
     }
 
+    centerView() {
+        // Bring the world origin (0,0) exactly to the middle of the screen
+        this.panOffset = {
+            x: -window.innerWidth / 2,
+            y: -window.innerHeight / 2
+        };
+        this.render();
+    }
+
     getCoord(e) {
         const rect = this.canvas.getBoundingClientRect();
-        // Precise mapping that accounts for CSS stretching vs internal resolution
-        const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-        const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
-        return { x: x + this.panOffset.x, y: y + this.panOffset.y };
+        // Dynamic mapping for high-precision touch alignment
+        // We use clientX/Y which is relative to the viewport
+        const x = (e.clientX - rect.left);
+        const y = (e.clientY - rect.top);
+
+        return {
+            x: x + this.panOffset.x,
+            y: y + this.panOffset.y
+        };
     }
 
     startDrawing(e) {
