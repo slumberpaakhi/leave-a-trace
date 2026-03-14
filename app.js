@@ -439,20 +439,22 @@ class TraceApp {
     }
 
     resize() {
+        // Enforce high-DPI awareness but keep logic simplified for 1:1 touch mapping
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         this.render();
     }
 
     getCoord(e) {
+        // Precise relative positioning for touch and mouse
         const rect = this.canvas.getBoundingClientRect();
-        // Robust coordinate mapping: Calculate actual scale between CSS pixels and Canvas resolution
-        const scaleX = rect.width / this.canvas.width;
-        const scaleY = rect.height / this.canvas.height;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
 
-        const x = (e.clientX - rect.left) / scaleX;
-        const y = (e.clientY - rect.top) / scaleY;
-        return { x: x + this.panOffset.x, y: y + this.panOffset.y };
+        return {
+            x: x + this.panOffset.x,
+            y: y + this.panOffset.y
+        };
     }
 
     startDrawing(e) {

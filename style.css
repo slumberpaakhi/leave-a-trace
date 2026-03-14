@@ -331,6 +331,8 @@ main {
     top: 0;
     left: 0;
     background: transparent;
+    touch-action: none;
+    /* Critical: Stops mobile browser from hijacking drawing movements */
 }
 
 /* Localhost Infinite Canvas Overrides: Handled by JS resize and panOffset */
@@ -345,7 +347,8 @@ main {
 }
 
 #interface-overlay {
-    position: absolute;
+    position: fixed;
+    /* Changed to fixed for corner locking */
     bottom: 2.5rem;
     left: 3rem;
     z-index: 20;
@@ -600,8 +603,7 @@ footer {
         position: fixed;
         bottom: 1.5rem;
         left: 1rem;
-        transform: none;
-        z-index: 100;
+        z-index: 1000;
     }
 
     .controls-container {
@@ -708,10 +710,12 @@ footer {
 
     /* Show user info slightly differently if we want to keep it */
     body:not(.is-admin) footer {
-        display: flex;
+        display: flex !important;
+        position: fixed;
         bottom: 1.5rem;
-        /* Corner alignment */
-        right: 1rem;
+        right: 1.5rem;
+        z-index: 1000;
+        pointer-events: none;
     }
 
     .user-info {
@@ -725,7 +729,12 @@ footer {
     }
 
     .stats {
-        display: none;
+        display: block !important;
+        opacity: 0.6;
+    }
+
+    .stats span {
+        font-weight: 600;
     }
 }
 
