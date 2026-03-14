@@ -446,15 +446,11 @@ class TraceApp {
     }
 
     getCoord(e) {
-        // Precise relative positioning for touch and mouse
         const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        return {
-            x: x + this.panOffset.x,
-            y: y + this.panOffset.y
-        };
+        // Precise mapping that accounts for CSS stretching vs internal resolution
+        const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+        return { x: x + this.panOffset.x, y: y + this.panOffset.y };
     }
 
     startDrawing(e) {
@@ -612,15 +608,19 @@ class TraceApp {
     }
 
     drawSegment(p1, p2, color, size) {
+        // Project world coordinates back to screen for live drawing feedback
+        const s1 = { x: p1.x - this.panOffset.x, y: p1.y - this.panOffset.y };
+        const s2 = { x: p2.x - this.panOffset.x, y: p2.y - this.panOffset.y };
+
         this.ctx.fillStyle = color;
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
+        const dx = s2.x - s1.x;
+        const dy = s2.y - s1.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx);
 
         for (let d = 0; d < dist; d += 2) {
-            const px = p1.x + Math.cos(angle) * d;
-            const py = p1.y + Math.sin(angle) * d;
+            const px = s1.x + Math.cos(angle) * d;
+            const py = s1.y + Math.sin(angle) * d;
             for (let j = 0; j < 4; j++) {
                 const rx = (Math.random() - 0.5) * size;
                 const ry = (Math.random() - 0.5) * size;
